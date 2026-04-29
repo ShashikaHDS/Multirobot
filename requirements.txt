@@ -1,0 +1,21 @@
+# Core RL stack
+gym==0.21.0
+stable-baselines3>=1.8.0,<3.0.0
+numpy<2.0
+pandas
+matplotlib
+pygame
+tensorboard
+
+# PyTorch is NOT pinned here because the right wheel depends on the GPU.
+# Install it FIRST, before the rest, with the right CUDA build.
+#
+# RTX 5090 (sm_120, requires CUDA 12.4+):
+#   pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu124
+#   (use nightly until torch 2.6+ stable lands with sm_120 in default wheels)
+#
+# Older NVIDIA GPUs (CUDA 12.1):
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+#
+# CPU only:
+#   pip install torch
