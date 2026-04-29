@@ -35,3 +35,8 @@ Thumbs.db
 
 # Runtime
 *.log
+
+# Paper / unpublished docs — never track these
+*.pdf
+*.docx
+*.tex
