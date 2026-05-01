@@ -24,15 +24,18 @@ from env_v8_generalized import GeneralizedRendezvousEnv, EnvConfig
 from feature_extractor_v8 import MultiRobotCNNExtractor
 
 
+# max_robots is fixed at 6 in every stage so the observation/action shapes
+# stay constant -> the policy weights carry across stages. The `max_active`
+# knob controls how many of those 6 slots are actually used per episode.
 CURRICULUM = [
-    dict(map_rows=10, map_cols=10, min_robots=2, max_robots=4, max_steps=200,
-         num_clusters=3, cluster_size_range=(2, 5)),
-    dict(map_rows=20, map_cols=20, min_robots=2, max_robots=6, max_steps=400,
-         num_clusters=5, cluster_size_range=(2, 10)),
-    dict(map_rows=30, map_cols=30, min_robots=3, max_robots=6, max_steps=600,
-         num_clusters=7, cluster_size_range=(3, 12)),
-    dict(map_rows=40, map_cols=40, min_robots=3, max_robots=6, max_steps=800,
-         num_clusters=10, cluster_size_range=(3, 15)),
+    dict(map_rows=10, map_cols=10, max_robots=6, min_robots=2, max_active=4,
+         max_steps=200, num_clusters=3, cluster_size_range=(2, 5)),
+    dict(map_rows=20, map_cols=20, max_robots=6, min_robots=2, max_active=6,
+         max_steps=400, num_clusters=5, cluster_size_range=(2, 10)),
+    dict(map_rows=30, map_cols=30, max_robots=6, min_robots=3, max_active=6,
+         max_steps=600, num_clusters=7, cluster_size_range=(3, 12)),
+    dict(map_rows=40, map_cols=40, max_robots=6, min_robots=3, max_active=6,
+         max_steps=800, num_clusters=10, cluster_size_range=(3, 15)),
 ]
 
 

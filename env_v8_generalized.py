@@ -45,8 +45,14 @@ class EnvConfig:
     map_cols: int = 20
     cells_per_robot: int = 2
     step_size_cells: int = 1
+    # max_robots = number of padding slots; defines the obs/action shape and
+    # MUST stay constant across curriculum stages so a single policy can carry
+    # weights between stages.
     max_robots: int = 6
     min_robots: int = 2
+    # max_active = upper bound on randomly chosen ACTIVE robot count per
+    # episode; can vary per stage. Defaults to max_robots if None.
+    max_active: Optional[int] = None
     field_of_view_cells: int = 3
     coarse_size: int = 32
     crop_size: int = 21
@@ -128,7 +134,9 @@ class GeneralizedRendezvousEnv(gym.Env):
             self.rng = np.random.RandomState(seed)
         c = self.cfg
         self.step_count = 0
-        self.num_active = self.rng.randint(c.min_robots, c.max_robots + 1)
+        upper = c.max_active if c.max_active is not None else c.max_robots
+        upper = min(upper, c.max_robots)
+        self.num_active = self.rng.randint(c.min_robots, upper + 1)
         self.presence = np.zeros(c.max_robots, dtype=np.float32)
         self.presence[:self.num_active] = 1.0
 
