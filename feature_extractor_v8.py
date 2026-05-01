@@ -12,7 +12,7 @@ The presence mask makes pooling permutation-invariant and robot-count-agnostic,
 so a single trained policy handles 2..max_robots without retraining.
 """
 
-import gym
+import gymnasium as gym
 import torch
 import torch.nn as nn
 

@@ -10,8 +10,11 @@ tensorboard
 # PyTorch is NOT pinned here because the right wheel depends on the GPU.
 # Install it FIRST, before this file, with the matching CUDA build.
 #
-# RTX 5090 (sm_120, requires CUDA 12.4+):
-#   pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu124
+# RTX 5090 (Blackwell, sm_120) — needs CUDA 12.8 build, NOT cu124.
+# The cu124 nightly index returns older snapshots that lack sm_120 kernels.
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+# (if cu128 stable is unavailable, fall back to its nightly:)
+#   pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu128
 #
 # Older NVIDIA GPUs (CUDA 12.1):
 #   pip install torch --index-url https://download.pytorch.org/whl/cu121
