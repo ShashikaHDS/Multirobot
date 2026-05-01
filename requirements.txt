@@ -1,21 +1,24 @@
-# Core RL stack
-gym==0.21.0
-stable-baselines3>=1.8.0,<3.0.0
-numpy<2.0
+# Core RL stack (Python 3.10+, including 3.12)
+gymnasium>=0.29
+stable-baselines3>=2.3.0
+numpy
 pandas
 matplotlib
 pygame
 tensorboard
 
 # PyTorch is NOT pinned here because the right wheel depends on the GPU.
-# Install it FIRST, before the rest, with the right CUDA build.
+# Install it FIRST, before this file, with the matching CUDA build.
 #
 # RTX 5090 (sm_120, requires CUDA 12.4+):
 #   pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu124
-#   (use nightly until torch 2.6+ stable lands with sm_120 in default wheels)
 #
 # Older NVIDIA GPUs (CUDA 12.1):
 #   pip install torch --index-url https://download.pytorch.org/whl/cu121
 #
 # CPU only:
 #   pip install torch
+#
+# NOTE: legacy v7.py and rl_*.py scripts use the old `gym` package and will not
+# run in this venv. Use a separate environment (Python 3.10 + gym==0.21.0) if
+# you need to reproduce paper-era results.

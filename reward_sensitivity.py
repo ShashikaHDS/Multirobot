@@ -56,15 +56,14 @@ def evaluate(model, n_episodes=EVAL_EPISODES):
     successes = 0
     ep_lens, mean_dists, obs_colls, rob_colls = [], [], [], []
     for i in range(n_episodes):
-        env.seed(EVAL_SEED_BASE + i)
-        obs = env.reset()
-        done = False
+        obs, _ = env.reset(seed=EVAL_SEED_BASE + i)
+        terminated = truncated = False
         oc = rc = 0
         steps = 0
         info = {}
-        while not done:
+        while not (terminated or truncated):
             action, _ = model.predict(obs, deterministic=True)
-            obs, _, done, info = env.step(action)
+            obs, _, terminated, truncated, info = env.step(action)
             oc += info.get("collide_obstacle", 0)
             rc += info.get("collide_robot", 0)
             steps += 1

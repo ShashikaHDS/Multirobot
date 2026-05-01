@@ -26,13 +26,12 @@ from env_v8_generalized import GeneralizedRendezvousEnv, EnvConfig
 
 def run_episode(model, cfg, seed, render=False):
     env = GeneralizedRendezvousEnv(cfg)
-    env.seed(seed)
-    obs = env.reset()
-    done = False
+    obs, _ = env.reset(seed=seed)
+    terminated = truncated = False
     info = {}
-    while not done:
+    while not (terminated or truncated):
         action, _ = model.predict(obs, deterministic=True)
-        obs, _, done, info = env.step(action)
+        obs, _, terminated, truncated, info = env.step(action)
         if render:
             env.render()
     if render:

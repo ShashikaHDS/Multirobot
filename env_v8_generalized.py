@@ -26,7 +26,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Optional
 
-import gym
+import gymnasium as gym
 
 
 PAPER_REWARDS = {
@@ -122,7 +122,10 @@ class GeneralizedRendezvousEnv(gym.Env):
         return [seed]
 
     # ------------------------------------------------------------------ reset
-    def reset(self):
+    def reset(self, *, seed=None, options=None):
+        super().reset(seed=seed)
+        if seed is not None:
+            self.rng = np.random.RandomState(seed)
         c = self.cfg
         self.step_count = 0
         self.num_active = self.rng.randint(c.min_robots, c.max_robots + 1)
@@ -162,7 +165,7 @@ class GeneralizedRendezvousEnv(gym.Env):
 
         self.distances = np.zeros(c.max_robots, dtype=np.float32)
         self.min_square_area, _, _ = self._compute_square()
-        return self._observation()
+        return self._observation(), {}
 
     # ------------------------------------------------------------------ step
     def step(self, action):
@@ -209,7 +212,7 @@ class GeneralizedRendezvousEnv(gym.Env):
         goal_area_fine = (c.goal_side_logical * self.k) ** 2
 
         success = bool(new_area <= goal_area_fine and free)
-        done = success
+        terminated = success
         if success:
             reward += rewards_cfg["goal"]
         elif new_area < self.min_square_area:
@@ -218,8 +221,7 @@ class GeneralizedRendezvousEnv(gym.Env):
             reward += rewards_cfg["area_increase"]
         self.min_square_area = min(self.min_square_area, new_area)
 
-        if self.step_count >= c.max_steps:
-            done = True
+        truncated = (not terminated) and self.step_count >= c.max_steps
 
         info = {
             "collide_obstacle": collide_obs,
@@ -231,7 +233,7 @@ class GeneralizedRendezvousEnv(gym.Env):
             "success":         success,
             "steps":           self.step_count,
         }
-        return self._observation(), float(reward), bool(done), info
+        return self._observation(), float(reward), bool(terminated), bool(truncated), info
 
     # ------------------------------------------------------------------ helpers
     def _move(self, pos, a):
@@ -400,16 +402,15 @@ class GeneralizedRendezvousEnv(gym.Env):
 
 if __name__ == "__main__":
     env = GeneralizedRendezvousEnv()
-    env.seed(0)
-    obs = env.reset()
+    obs, _ = env.reset(seed=0)
     print("Observation shapes:")
     for k, v in obs.items():
         print(f"  {k}: {v.shape if hasattr(v, 'shape') else v}")
     print(f"num_active={env.num_active}")
     for _ in range(50):
         a = env.action_space.sample()
-        obs, r, done, info = env.step(a)
-        if done:
+        obs, r, terminated, truncated, info = env.step(a)
+        if terminated or truncated:
             print("episode end:", info)
             break
     env.close()
