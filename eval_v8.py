@@ -74,21 +74,27 @@ def main():
 
     model = PPO.load(args.model, device="auto")
     K = args.cells_per_robot
+    # Model was trained at max_robots=6 (fixed obs/action shape); eval envs MUST
+    # match. To control how many robots are actually active per episode, set
+    # min_robots == max_active so the random pick lands exactly there.
+    MAX_ROBOTS = 6
     rows = []
 
-    # ---- Test case 1: vary robot count
+    # ---- Test case 1: vary active robot count
     for nr in [2, 3, 4, 5, 6]:
         cfg = EnvConfig(map_rows=20, map_cols=20,
-                        min_robots=nr, max_robots=nr,
+                        max_robots=MAX_ROBOTS,
+                        min_robots=nr, max_active=nr,
                         cells_per_robot=K)
         m = aggregate(model, cfg, n=args.n, render=args.render)
         rows.append({"case": "scalability_robots", "param": nr, **m})
         print(f"[robots={nr}] {m}")
 
-    # ---- Test case 2: vary map size
+    # ---- Test case 2: vary map size (4 active robots)
     for sz in [20, 25, 30, 40]:
         cfg = EnvConfig(map_rows=sz, map_cols=sz,
-                        min_robots=4, max_robots=4,
+                        max_robots=MAX_ROBOTS,
+                        min_robots=4, max_active=4,
                         cells_per_robot=K)
         m = aggregate(model, cfg, n=args.n, render=args.render)
         rows.append({"case": "scalability_map", "param": sz, **m})
@@ -97,7 +103,8 @@ def main():
     # ---- Test case 3: different obstacle shapes (cluster sizes)
     for cs_range in [(2, 5), (2, 10), (5, 15), (8, 20)]:
         cfg = EnvConfig(map_rows=20, map_cols=20,
-                        min_robots=4, max_robots=4,
+                        max_robots=MAX_ROBOTS,
+                        min_robots=4, max_active=4,
                         cells_per_robot=K,
                         cluster_size_range=cs_range)
         m = aggregate(model, cfg, n=args.n, render=args.render)
@@ -108,7 +115,8 @@ def main():
     for ncl in [3, 5, 8, 12]:
         cfg = EnvConfig(map_rows=20, map_cols=20,
                         num_clusters=ncl,
-                        min_robots=4, max_robots=4,
+                        max_robots=MAX_ROBOTS,
+                        min_robots=4, max_active=4,
                         cells_per_robot=K)
         m = aggregate(model, cfg, n=args.n, render=args.render)
         rows.append({"case": "obstacle_density", "param": ncl, **m})
@@ -116,7 +124,8 @@ def main():
 
     # ---- Test case 5: different initial positions (same config, different seeds)
     cfg = EnvConfig(map_rows=20, map_cols=20,
-                    min_robots=4, max_robots=4,
+                    max_robots=MAX_ROBOTS,
+                    min_robots=4, max_active=4,
                     cells_per_robot=K)
     for seed_block in range(3):
         m = aggregate(model, cfg, n=args.n,
