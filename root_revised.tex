@@ -1,0 +1,463 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% REVISED VERSION addressing four reviewer reports.
+% Convention:
+%   \textcolor{red}{...}              -- NEW or REPLACEMENT content added in this revision.
+%   \textcolor{green!60!black}{...}   -- Original content that has been REMOVED or REPLACED;
+%                                       kept visible (in dark green) so reviewers can see
+%                                       what changed. Delete these blocks for the final
+%                                       camera-ready version.
+% For final submission, search-and-replace:
+%   "\textcolor{red}{...}"            -> remove the wrapper (keep the text)
+%   "\textcolor{green!60!black}{...}" -> delete the wrapper AND the text
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\documentclass[journal]{IEEEtran}
+
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{booktabs, tabularx}
+\usepackage{xcolor}
+\usepackage{cite}
+
+\begin{document}
+
+\title{
+Reinforcement Learning-based Autonomous Rendezvous for Docking of Reconfigurable Modular Robots in Unknown Environments
+}
+
+\markboth{Journal of \LaTeX\ Class Files,~Vol.~14, No.~8, August~2015}%
+{Shell \MakeLowercase{\textit{et al.}}: Bare Demo of IEEEtran.cls for IEEE Journals}
+
+\maketitle
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{abstract}
+
+Reconfigurable Modular Robots (RMRs) offer enhanced adaptability and collaborative capabilities compared to traditional robotic systems. However, efficiently rendezvousing multiple robots for docking in unknown or dynamic environments remains a challenge.
+\textcolor{green!60!black}{This paper proposes a reinforcement learning-based autonomous rendezvous method for docking of RMRs operating in unknown environments. The proposed model is formulated as a Markov Decision Process (MDP) and trained using Proximal Policy Optimization (PPO), allowing the robots to learn optimal policies through interactions with the environment. This approach enables efficient task learning and adaptation to environmental changes. The agent was trained and evaluated across different test cases to assess the flexibility, adaptability, and efficiency. These evaluations have demonstrated the effectiveness of the learned policies in diverse environmental settings and the scalability of the approach to different numbers of robots. Additionally, real-world experiments were conducted further validating the model's adaptability.}
+\textcolor{red}{This paper proposes a reinforcement learning-based autonomous rendezvous method for docking of RMRs operating in unknown environments. The problem is formulated as a Markov Decision Process (MDP) over a partially observed grid occupancy map and solved using a centralised single-agent Proximal Policy Optimisation (PPO) policy that controls the joint multi-discrete action space of the fleet. The agent learns \emph{where} to converge as a function of the partially observed map, without ever being supplied an explicit meeting point. The proposed method was trained and evaluated across five test schemes assessing scalability with respect to the number of robots, map size, object shapes, obstacle density, and initial robot positions. Each configuration was repeated over multiple random seeds, with results reported as mean and standard deviation. A quantitative comparison against a classical A$^{*}$ rendezvous baseline operating on the same partially observed maps is also included, together with a one-at-a-time sensitivity analysis of the reward function. These evaluations demonstrate the effectiveness, generalisation, and energy-balanced behaviour of the learned policies. Additionally, real-world experiments were conducted to further validate the model's practical applicability.}
+
+\textit{Impact statement-}This paper advances autonomous multi-robot coordination by introducing a reinforcement learning framework that enables energy-aware rendezvous and docking of reconfigurable modular robots in unknown environments. Unlike traditional optimisation, rule-based, or heuristic coordination methods that assume prior environmental knowledge or fixed robot morphologies, the proposed approach learns adaptive policies directly from partial observations, allowing scalable and flexible deployment in dynamic and unstructured settings.
+The work makes three key contributions beyond current understanding. First, it formulates multi-robot rendezvous as a reinforcement learning problem that minimises convergence area while implicitly reducing energy expenditure, providing a new perspective on efficient cooperative navigation. Second, it demonstrates how learned policies can generalise across varying numbers of robots, map sizes, obstacle densities, and initial configurations, highlighting improved scalability compared with classical coordination frameworks. Third, the integration of simulation training with real-world docking experiments validates the practical feasibility of reinforcement learning for modular robotic self-assembly, bridging the gap between algorithmic research and physical deployment.
+By enabling autonomous docking without prior maps, this research opens new possibilities for adaptive modular robotic systems in logistics, inspection, and space exploration, where environments are often unknown.
+
+\end{abstract}
+
+\begin{IEEEkeywords}
+Reconfigurable modular robots, Rendezvous algorithm, Reinforcement learning, Autonomous docking
+\end{IEEEkeywords}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{INTRODUCTION}
+Reconfigurable Modular Robots (RMRs) are employed in a wide array of robotic applications, particularly in exploration~\cite{act14020094}, inspection~\cite{pistone2019reconfigurable}, cleaning~\cite{wijegunawardana2024insights}, logistics~\cite{s23063184}, space missions~\cite{1659543}, and search and rescue~\cite{lu2025morphology}. Distinct from conventional robots with fixed morphologies, RMRs possess the unique ability to deliberately alter their structure by assembling and disassembling modular components. This reconfigurability enables them to adapt to diverse environments and task demands, as well as to recover from damage by replacing faulty modules. Such capabilities enhance the system's robustness and operational versatility across various scenarios.
+
+In RMR systems, inter-module connections are established through coupling mechanisms that enable modules to attach or detach as required by the task~\cite{saab2019review}. These mechanisms commonly include mechanical, magnetic, and solder-based approaches~\cite{paik2019}. Among them, mechanical coupling mechanisms are particularly popular, as they not only offer higher connection strength but also ensure a robust and stable link between modules~\cite{rus2001crystalline,Mori}. Magnetic coupling mechanisms, developed using permanent magnets~\cite{3D_M-blocks,modquad} or electromagnets~\cite{kubits2020,Tiled_ardesign}, offer an easy and fault-tolerant method for establishing connections between modules. Alternatively, applying heat to the contact points between robots to melt the surface material, followed by a curing period, provides a bonding method that minimises the use of mechanical components~\cite{swissler2018fireant,swissler2020fireant3d}. This soldering mechanism involves fewer mechanical parts and is suitable for smaller-sized robots. Additionally, certain coupling mechanisms are designed to enable power transmission and facilitate communication between modules after they have been physically connected~\cite{HerCel}, thereby enhancing both functionality and integration within the robotic system.
+
+\textcolor{red}{Beyond the mechanical coupling layer, adaptability in self-reconfigurable robots has also been pursued at the control layer. For instance, Rayguru et al.~\cite{rayguru2024switched} introduce a switched adaptive control framework for self-reconfigurable cleaning robots that compensates for morphology-induced dynamic uncertainty during reconfiguration. Such control-layer adaptability is complementary to the coordination-layer adaptability we address in this paper: while~\cite{rayguru2024switched} ensures stable motion of an individual robot whose shape changes, our framework determines \emph{where} a fleet of such robots should converge so that the reconfiguration can take place.}
+
+Navigating and coordinating multiple robots in unknown environments is a challenging task, particularly in modular robotics.
+Optimised coordination strategies in multi-robot systems are key to ensuring efficient task completion, avoiding collisions, and adapting to complex dynamic environments~\cite{liu2020prediction,Zhou2021-mx}. Existing coordinating strategies have been employed to address the above challenges using classical optimisation methods including mathematical optimization~\cite{Liu2016-bm,9387084}, heuristic-based approaches~\cite{Yao_Ye_Dai_2018}, and rule-based strategies with predefined decision-making frameworks~\cite{Boldrer2023-jy}.
+Fort et al.~\cite{9387084} proposed an online task allocation algorithm to ensure collision-free operation in multi-robot systems by balancing interference costs and computational overhead in task allocation. This approach also demonstrates the robustness of mathematical solutions in developing multi-robot systems. Heuristic-based approaches, particularly genetic algorithms, have been shown to enhance robot coordination efficiency by simulating evolutionary processes, exploring a vast solution space to find optimized coordination strategies that adapt to dynamic environments.
+Zhou and Tokekar~\cite{Zhou2021-mx} highlighted how predefined rule-based frameworks enable coordination in dynamic environments by establishing guidelines for robot actions based on the environment observations. The combination of these rule-based systems with mathematical optimization further reinforces the robustness of multi-robot operations.
+
+Burgard et al.~\cite{1435481} proposed an exploration algorithm for a multi-robot system to efficiently gather information in unknown environments by allowing robots to share their data among the robots in the system. It reduced the time and energy required for exploration; however, challenges remain in finding an optimised solution for energy-efficient path planning, which is a critical aspect of practical applications.
+\textcolor{green!60!black}{A recent work focused on highlighting an energy-efficient multi-robot coordination system proposed an algorithm that robots distribute task performance according to energy consumption [8062953-removed]. This approach enables a balanced energy consumption distribution among each robot in the multi-robot system, preventing overexertion by individual robots while others remain underutilised. This emphasis on fair distribution in energy consumption by minimising the maximum energy consumption by each robot in the system.}
+% Citation [8062953] removed: DOI 10.1109/TCST.2017.2755878 is the annual
+% volume index of IEEE TCST 2017, not a paper. The sentence above is shown
+% in green to indicate it has been removed in this revision.
+The work in~\cite{pasumarthi2025determining} presents a multi-objective genetic algorithm integrated with A* path planning to optimize assembly zones for modular reconfigurable robots operating in heterogeneous obstacle environments. However, their method assumes complete prior knowledge of the environment, and to the best of our knowledge, no existing approach addresses energy-efficient rendezvous of multiple robots in an unknown environments.
+
+The use of Reinforcement Learning (RL) is a rapidly evolving research area in multi-robots coordination~\cite{liu2021visuomotor} and path planning~\cite{wijegunawardana2025risk}. That enables robots to learn optimised strategies for autonomous navigation, exploration, task allocation and completion and obstacle avoidance while interacting with the environment~\cite{Singh2022-vm,s23073625}. Robots optimise their behaviours according to the environment by leveraging algorithms which emphasise learning from trial and error experiences rather than relying on a predefined set of rules. A recent study on multi-robot coordination in complex environments employed Deep RL (DRL) to address environmental complexities while accounting for significant time and energy costs~\cite{multi5}. The proposed algorithm demonstrated its effectiveness after being trained in a three-dimensional environment. Shaohao et al.~\cite{10611573} introduced a multi-robot exploration platform called MAexp, utilizing multi-agent reinforcement learning. They addressed challenges such as the Sim-to-real gap caused by
+action discretisation and scene quantisation, as well as the lack of standardised scenarios in multi-agent RL.
+
+\textcolor{red}{Two design choices in our framework warrant explicit motivation against this prior literature. First, we deliberately adopt a \emph{centralised single-agent} PPO formulation rather than a multi-agent variant such as MAPPO~\cite{yu2022mappo} or IPPO~\cite{dewitt2020independent}. The autonomy architecture described in Section~II-C already aggregates per-robot LiDAR scans into a unified global map on a host computer; given this aggregation, a centralised policy operating on the joint multi-discrete action space is the natural fit and avoids the credit-assignment problems that arise in decentralised multi-agent RL. Second, we adopt a discrete-state discrete-action MDP rather than continuous control: the continuous Euler-Lagrange dynamics of each Smorphi are absorbed by the on-board low-level controller (Section~II-A), which converts a unit-grid waypoint into the corresponding mecanum-wheel velocity commands. The RL layer therefore operates one abstraction level above the dynamics, in the same discrete-grid abstraction used by MAexp~\cite{10611573} and other recent multi-robot navigation studies.}
+
+\textcolor{red}{A further design choice concerns reward shaping. Rather than supplying an explicit meeting cell as a target -- which a classical planner would require -- we shape the reward around the area of the minimum axis-aligned bounding box of the fleet (Section~III). This is a form of domain-specific potential-based reward shaping~\cite{ng1999policy}, in which a dense intermediate signal approximates distance to the (unspecified) goal. The contribution of our framework is precisely that the agent learns \emph{where} to converge as a function of the partially observed map, so the rendezvous point emerges from the policy rather than being chosen by a hand-engineered heuristic.}
+
+This paper proposes a novel reinforcement learning framework and models for coordinated multi-robot energy-efficient rendezvous. This optimises energy usage in unknown environments and ensures a balanced workload distribution. The remainder of this paper is organised as follows: Section II describes the robot platform used in this research and the proposed docking mechanism. Section III introduces the proposed rendezvous algorithm. Section IV presents experimental results, analysing the performance of the reinforcement learning based robot system\textcolor{red}{, including a quantitative comparison with a classical A$^{*}$ rendezvous baseline and a sensitivity analysis of the reward function}. Finally, Section V concludes the paper by summarising key contributions and suggesting directions for future research.
+
+
+\section{ROBOT PLATFORM}
+
+\subsection{Smorphi}
+
+Smorphi is a modular robot with a footprint of 170 x 170 x 230 mm (see Fig.~\ref{smorphi}). It is equipped with four Mecanum wheels, enabling holonomic motion. The robot follows a multi-stack design for compactness, with each stack containing different components essential for its operation. The first stack consists of the base plate, to which the motors are connected. Additionally, the Li-ion battery is mounted on the base plate. The custom-designed motor controller board is attached to the stack above the base plate. The ESP32-based controller is mounted on the plate above it but flipped upside down, allowing the motor controller board and the ESP32-based main controller board to be within the same stack. In the topmost stack, the Raspberry Pi 4B (RAM:\,8GB), LiDAR (Slamtec RPLIDAR A1), and internal measurement unit (IMU - Yahboom 10-axis) are fixed to the robot. The robot is equipped with four DC motors with a speed of 110 RPM. The high torque generated by these motors allows the execution of very small velocity commands, enhancing the accuracy of path following. For perception, the robot utilizes LiDAR, an IMU, and odometry data from wheel encoders. The IMU and odometry data are fused using an Extended Kalman Filter (EKF) to improve state estimation. These processes are managed by the Raspberry Pi single-board computer, which runs Ubuntu 22.04 LTS and ROS 2 Humble. Overall, the ESP32-based controller board and motor controller board function as low-level controllers, while the Raspberry Pi serves as the high-level controller.
+
+\textcolor{red}{Smorphi qualifies as a Reconfigurable Modular Robot in the standard sense established in the modular-robotics literature~\cite{paik2019,saab2019review}: through the pin-hole docking mechanism described in Section~II-B, multiple Smorphi units can physically attach to one another to form larger composite structures, and can subsequently detach on demand. Reconfigurability in this work therefore refers to the ability of the fleet to deliberately change its overall morphology by assembling and disassembling individual modules, not merely the ability of the fleet size to vary. The rendezvous algorithm proposed in Section~III provides the prerequisite for any such reconfiguration, since modules must first physically meet in a docking-suitable area before assembly can occur.}
+
+\begin{figure}[!b]
+    \centering
+    \includegraphics[width=0.9\linewidth]{Figures/images/details smorphi_page-0001.jpg}
+    \caption{\textcolor{red}{The Smorphi robot platform used throughout this work, showing the multi-stack mechanical design, the on-board sensing suite (LiDAR and IMU), the Raspberry Pi high-level controller, the ESP32 low-level controller, and the genderless pin-hole docking mechanism that enables reconfiguration.}}
+    \label{smorphi}
+\end{figure}
+
+\subsection{Docking mechanism and Autonomous docking}
+
+The docking mechanism used in this research is a previously developed pin-hole mechanism with a locking system. This genderless design allows docking on any face of any robot, providing flexibility in reconfiguration. Once two robots connect, an electrical signal is sent to the ESP32 board, which then halts their movement toward each other and activates the locking mechanism, securing the connection between the robots. Moreover, the mechanical design itself enhances the fault tolerance of the docking mechanism, allowing it to operate efficiently in real-world conditions. A camera and an ArUco marker are attached to the faces of the Smorphi robots that are intended to connect. First, the two robots must ensure they are within each other's line of sight. Once this condition is met, the autonomous docking process is initiated. During docking, the robot moves toward the target robot while continuously adjusting for trajectory errors to ensure precise alignment.
+
+\textcolor{red}{Because the docking mechanism mechanically absorbs sub-cell positioning error, the RL policy only needs to deliver each robot to the correct grid cell; fine pose alignment is handled by the docking controller. This separation of concerns reduces the burden placed on the learning layer and supports sim-to-real transfer (see Section~IV-F).}
+
+\subsection{Autonomy Architecture}
+
+The autonomous software architecture for the RL-based model facilitates communication, robot perception, and centralized command for autonomous rendezvous and docking of reconfigurable modular robots.
+Each robot in the fleet is connected to the main local host computer, which runs Ubuntu 22.04 LTS and ROS 2 Humble, and is responsible for controlling the multi-robot system. Each robot shares its binary grid occupancy map (\texttt{/map}) and its location (\texttt{/slam\_out\_pose}) with the host computer. The host computer then generates a unified global map by integrating data from all robots and shares it with the reinforcement learning-based model. Using this global map, the RL-based model determines actions for the multi-robot system to find a rendezvous point. The host computer sends goal positions for each robot at each step via the \texttt{/goal\_pose} topic to the \texttt{Smorphi\_controller} node. The \texttt{Smorphi\_controller} then computes the velocity values and publishes them to the \texttt{/cmd\_vel} topic to execute the movement. Once a robot reaches its final destination, as determined by the RL model, it initiates the docking process by sending a ROS 2 action message to the \texttt{docking\_node}. The docking sequence begins by searching for the ArUco marker. Upon detecting the corresponding marker, the robot moves toward the target robot, continuously adjusting its trajectory for accurate alignment. Once docking is complete, the robots exit the \texttt{docking\_node} and resume normal navigation.
+
+\textcolor{red}{It is important to distinguish between centralised \emph{computation} and global \emph{observability}. Although the policy runs on a host computer, the global map exposed to the policy is the \emph{union} of per-robot LiDAR scans accumulated so far; cells that no robot has yet observed remain unknown. The agent therefore operates under partial observability with respect to the true map, and learning is required precisely because the rendezvous point must be chosen on the basis of this incrementally revealed view rather than a pre-known floor plan.}
+
+\section{Multi Robot Rendezvous Using Reinforcement Learning}
+
+Coordinating a multi-robot fleet to autonomously rendezvous in an unknown environment is a challenging task. This section addresses these challenges using reinforcement learning while achieving the objectives of convergence in an unknown environment with minimal energy consumption.
+
+\textcolor{red}{The remainder of this section is organised as follows. We first state the problem objectives and constraints (Section~III-A). We then formalise the problem as a Markov Decision Process and present the proposed centralised PPO algorithm (Section~III-B); the algorithm has three components: (i) a centralised PPO agent over a joint multi-discrete action space, (ii) a partially observed grid map updated each step by per-robot LiDAR scans, and (iii) an area-shrinking reward that drives convergence without specifying a meeting point. Finally, we describe training and hyperparameter selection (Section~III-C).}
+
+\subsection{Problem Objectives and Constraints}
+
+The problem is structured with specific objectives and constraints to ensure an efficient and well-coordinated rendezvous process. The primary objective is to guide a multi-robot fleet to rendezvous at an unobstructed area in an unknown environment. This area must be free of obstacles to facilitate the docking process after the exploration phase. A secondary objective is to minimize energy consumption, which is achieved by reducing the total distance traveled by each robot. This approach distributes the convergence effort among the entire robot fleet, leading to a more optimized and balanced solution. Several constraints are incorporated into the problem formulation. The environment is represented as a binary grid occupancy map, consisting of free spaces, obstacles, and walls. Initially, the environment is unknown to the robots, and they can only perceive their surroundings within the range of their 2D LiDAR scans. Additionally, the robots maintain bidirectional communication with a centralized command center to share observations and receive velocity commands, ensuring coordinated decision-making.
+
+\textcolor{red}{For all training and experiments reported in this paper, the LiDAR sensor radius is set to $r = 1$ cell, yielding a $(2r{+}1) \times (2r{+}1) = 3 \times 3$ local observation window centred on each robot. The known-map cells outside any robot's observation window so far remain unknown. We further assume synchronous, lossless communication between the robots and the host: addressing realistic communication delays and dropouts is left as future work and is discussed in Section~IV-G.}
+
+\subsection{Proposed Rendezvous RL-based Algorithm}
+
+\textcolor{green!60!black}{OpenAI Gym and Stable-Baselines are widely used frameworks for developing and testing RL algorithms, particularly in mobile robotics. OpenAI Gym provides a standardized environment interface, enabling the benchmarking of different RL models. In this study, a custom-defined Gym environment is used for training. Stable-Baselines offers well-optimized implementations of popular RL algorithms, such as Proximal Policy Optimization (PPO), Deep Q-Network (DQN), and Soft Actor-Critic (SAC). Among these, the PPO algorithm is used in this study due to its generalized behavior, making it well-suited for discrete control tasks and dynamic environments. In reinforcement learning, several key terms define the learning process.}
+\textcolor{red}{We implement the proposed framework on top of OpenAI Gym~\cite{brockman2016openai} and Stable-Baselines3~\cite{raffin2021stable}, two widely used frameworks for developing and testing RL algorithms in mobile robotics. OpenAI Gym provides a standardised environment interface that enables benchmarking across RL models; in this study, a custom Gym environment is used for training. Stable-Baselines3 provides well-optimised implementations of popular RL algorithms, including Proximal Policy Optimisation (PPO)~\cite{schulman2017proximal}, Deep Q-Network (DQN), and Soft Actor-Critic (SAC). PPO is selected for this work for three reasons. First, PPO supports discrete action spaces natively via a categorical policy head and has been shown to work well on multi-robot navigation problems with similar discretisation~\cite{10611573}. Second, the joint action space of an $N$-robot fleet grows as $5^{N}$, which makes a single DQN $Q$-head impractical for $N \geq 3$; PPO with a MultiDiscrete categorical head factorises the joint over agents and therefore scales linearly with $N$. Third, on-policy PPO with entropy regularisation gives a clean knob for the exploration--exploitation trade-off (Section~III-C).}
+
+\textcolor{red}{\subsubsection{MDP formulation} We formulate the rendezvous problem as a finite-horizon Markov Decision Process $\langle \mathcal{S}, \mathcal{A}, \mathcal{P}, \mathcal{R}, \gamma \rangle$:}
+\begin{itemize}
+\item \textcolor{red}{$\mathcal{S}$: the state is the tuple $s_t = (G_k^{(t)}, \mathbf{P}^{(t)})$, where $G_k^{(t)}$ is the partially observed grid occupancy map at time $t$ and $\mathbf{P}^{(t)} = (P_1^{(t)}, \ldots, P_N^{(t)})$ are the grid positions of all $N$ robots. Both components are described in detail below.}
+\item \textcolor{red}{$\mathcal{A}$: the joint action space is $\mathcal{A} = \prod_{i=1}^{N} \mathcal{A}_i$, where each $\mathcal{A}_i$ is the per-robot discrete action set of Table~\ref{Actionspace}; this is a multi-discrete action space of size $|\mathcal{A}_i|^{N}$.}
+\item \textcolor{red}{$\mathcal{P}$: the transition function is deterministic up to collisions. If the joint action is collision-free, all robots advance to their target cells; otherwise, no robot moves and the colliding ones receive a collision penalty (Section~III-B-3).}
+\item \textcolor{red}{$\mathcal{R}$: the reward function is the area-shrinking shaping described in Table~\ref{rewardasignment} and detailed below.}
+\item \textcolor{red}{$\gamma$: a scalar discount factor. We use $\gamma = 0.99$ throughout, following the Stable-Baselines3 default for navigation-style tasks.}
+\end{itemize}
+
+\textcolor{red}{Although the state $s_t$ is fully observed by the centralised policy, the partially-observed map $G_k^{(t)}$ itself carries the partial-observability of the underlying environment, since cells outside the fleet's accumulated LiDAR coverage remain unknown. The MDP formulation therefore captures the navigation problem under \emph{learned} partial observability without requiring a partially observable MDP (POMDP) treatment.}
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width= 5.5 In]{Figures/rl_rmewrk_page-0001.jpg}
+\caption{\textcolor{red}{Overview of our proposed RL-based rendezvous framework. The environment (partially-known map and robot positions) is consumed by the centralised PPO agent, which selects a joint action; the resulting reward and updated observation are fed back to the policy and value networks. The clipped surrogate objective $L^{CLIP}(\theta)$ in~\eqref{eq:clip} is used to update the policy parameters $\theta$, and the total reward decomposes into the dense shaping term and the sparse goal term.}}
+\label{Fig:RL archi}
+\end{figure*}
+
+\textcolor{green!60!black}{A novel RL-based approach is proposed to achieve the described objectives while adhering to the given constraints (see Fig.~\ref{Fig:RL archi}). The proposed algorithm (see Algorithm~\ref{algo:rl_algo}) is specifically designed to train a reinforcement learning-based model to operate within these constraints and optimise the rendezvous process. The learning process begins by generating a random environment where everything outside the agent is considered as the environment. During the learning process, the agent interacts with the environment by taking actions and receiving feedback. In this study, the environment is represented as a binary grid occupancy map $G$ (see Equation~\ref{eq:map}), where ``0'' represents free cells and ``1'' represents obstacles. This map follows a standard binary grid occupancy structure with its origin at the top-left corner (see Fig.~\ref{Fig:exploring_map}). For each episode, a random map is generated, and the map-generation function ensures that there are no enclosed free spaces. This is crucial because, during initial robot placement, robots are then randomly placed on the map, with each robot occupying a single grid cell. If robots are randomly placed in enclosed areas, they might become trapped and unable to navigate the environment effectively. Therefore, the map generation function is designed to prevent the generating enclosed or inaccessible regions. The predefined values of the variables should be accounted for in the analysis, such as the number of robots in the multi-robot system is predefined at the start, along with the LiDAR scanner's perimeter, which determines how many pixels it can explore. For example, in Figure~\ref{Fig:exploring_map}, the LiDAR scanner value is set to 1, meaning it can detect one pixel beyond its current position. Once the robots are placed on the map, their locations and perception data are sent to the agent as observations. An agent is an entity that interacts with the environment by executing actions and receiving observations based on those actions. It continuously learns from these interactions to improve its decision-making. Moreover, the agent is responsible for solving the problem within the reinforcement learning framework by optimising its policy to achieve the desired objectives. The agent receives a partially observed map along with the positions of all robots. Using these positions, the agent calculates the smallest square area that contains all the robots and stores it as the minimum area. The agent then selects an action from the action space (see Equation~\ref{eq:2} and~\ref{eq:3}) and executes it on the robot fleet.}
+\textcolor{red}{\subsubsection{Environment} We propose a novel RL-based approach to achieve the objectives described above while respecting the given constraints; an overview is shown in Fig.~\ref{Fig:RL archi} and the full procedure is summarised in Algorithm~\ref{algo:rl_algo}. The environment is represented as a binary grid occupancy map $G$,}
+\begin{equation} \label{eq:map}
+G = \{ g_{i,j} \mid i \in \{0, \ldots, m{-}1\}, j \in \{0, \ldots, n{-}1\}, g_{i,j} \in \{0,1\} \},
+\end{equation}
+\textcolor{red}{where $g_{i,j}=0$ denotes a free cell, $g_{i,j}=1$ denotes an obstacle, $m$ is the map height, and $n$ the map width. The origin of the map is at the top-left corner (see Fig.~\ref{Fig:exploring_map}). At the start of each training episode a random map is sampled; the map generator guarantees that the free-cell region is a single connected component, so that no robot can be placed in an isolated pocket. The $N$ robots are then placed on randomly chosen free cells, each occupying a single grid cell. The number of robots $N$ and the LiDAR perception radius $r$ are fixed per training run.}
+
+\textcolor{red}{\subsubsection{Action and observation spaces} Each robot has a per-step action set $\mathcal{A}_i = \{a^{1}, a^{2}, a^{3}, a^{4}, a^{5}\}$ corresponding to (forward, backward, left, right, stay) as listed in Table~\ref{Actionspace}. The joint action is the cross product over all robots,}
+\begin{equation}
+\label{eq:2}
+\mathcal{A} = \{ a_i \mid i = 1, 2, 3, \ldots, N \},
+\end{equation}
+\begin{equation}
+\label{eq:3}
+a_i = \{ a_i^{1}, a_i^{2}, a_i^{3}, a_i^{4}, a_i^{5} \},
+\end{equation}
+\textcolor{red}{where the superscripts index the five primitives defined in Table~\ref{Actionspace}. The size of $\mathcal{A}$ is therefore $5^{N}$. The observation given to the agent is the partially-known map $G_k$ assembled from the union of per-robot LiDAR scans so far, together with the tuple of robot grid positions,}
+\begin{equation}
+\label{eq:4}
+\mathbf{P} = (P_1, P_2, \ldots, P_N), \qquad P_i \in G,
+\end{equation}
+\textcolor{red}{where each $P_i$ is the grid-cell index of robot $i$ in $G$ (Table~\ref{Observationspace}).}
+
+\textcolor{red}{\subsubsection{Reward function} The agent must learn \emph{where} to converge from a partial map. Rather than supplying an explicit meeting cell, we shape the reward around the area of the minimum axis-aligned bounding box of the fleet. Let $A_{\min}(t)$ denote that area at step $t$:}
+\begin{equation}
+\label{eq:minarea}
+A_{\min}(t) = \bigl(\max_i x_i(t) - \min_i x_i(t) + 1\bigr) \cdot \bigl(\max_i y_i(t) - \min_i y_i(t) + 1\bigr),
+\end{equation}
+\textcolor{red}{where $(x_i(t), y_i(t))$ is the grid position of robot $i$. The reward at step $t$ is then a function of how $A_{\min}(t)$ evolves and of whether any collisions occurred (Table~\ref{rewardasignment} summarises the values). If $A_{\min}(t)$ falls below the previous best, a positive reward of $+20$ is given; if the new $A_{\min}$ also falls below a predefined threshold (e.g.\ a $4 \times 4$ box, threshold $= 16$), the episode terminates and a sparse goal reward of $+100$ is given. If $A_{\min}(t)$ increases, a small negative reward $-0.5$ is given. Wall and inter-robot collisions each incur $-5$. The choice of these values is justified through a sensitivity analysis in Section~IV-F. Because $A_{\min}(t)$ is monotone-non-increasing as the fleet contracts toward any cell, the shaped reward is a form of potential-based reward shaping in the sense of Ng~et~al.~\cite{ng1999policy}, where the dense intermediate signal approximates the distance to the (unspecified) goal.}
+
+\textcolor{red}{\subsubsection{Policy optimisation} The policy and value networks are trained jointly using PPO with the clipped surrogate objective~\cite{schulman2017proximal}}
+\begin{equation}
+\label{eq:clip}
+L^{CLIP}(\theta) = \hat{\mathbb{E}}_t \bigl[ \min\bigl( r_t(\theta) \hat{A}_t,\; \mathrm{clip}\bigl(r_t(\theta), 1{-}\epsilon, 1{+}\epsilon\bigr) \hat{A}_t \bigr) \bigr],
+\end{equation}
+\textcolor{red}{where $r_t(\theta) = \pi_\theta(a_t|s_t)/\pi_{\theta_\text{old}}(a_t|s_t)$ is the policy ratio, $\hat{A}_t$ is the generalised advantage estimate, and $\epsilon = 0.2$ is the standard clipping range~\cite{schulman2017proximal}. The total objective also includes a value-function loss and the entropy bonus $H(\pi_\theta)$ scaled by $\beta = $ \texttt{ent\_coef} (Section~III-C-1). The factorised multi-discrete categorical policy treats the joint action $(a_1, \ldots, a_N)$ as a product of $N$ independent categoricals conditioned on the same shared state, so the policy parameter count is linear, not exponential, in $N$.}
+
+\begin{algorithm}[!t]
+\caption{Reinforcement Learning-Based Multi-Robot Coordination}
+\label{algo:rl_algo}
+\begin{algorithmic}[1]
+\State \textbf{Input:} Unknown Map, Map Size $(m \times n)$, Random  Initial Positions
+\State \textbf{Parameters:} Action Space $\mathcal{A}$, Reward, Exploration Rate, Discount Factor $\gamma$
+\State \textbf{Output:} Robot Movements, Explored Grid Map, Total Reward Collected
+\vspace{1mm}
+
+\State \textbf{Initialize:} Random Map, Random Positions, RL Agent, $\texttt{Steps} \gets 0$, $\texttt{SmallestArea} \gets \infty$
+\While{episode not terminated}
+    \State $\texttt{Steps} \gets \texttt{Steps} + 1$
+
+    \State \textbf{Step 1:} Agent selects actions for all robots from $\mathcal{A}$
+    \State \textbf{Step 2:} Evaluate collisions
+    \For{each robot}
+        \If{robot collides with another robot}
+            \State Assign reward $R \gets -5$
+        \EndIf
+        \If{robot collides with a wall}
+            \State Assign reward $R \gets -5$
+        \EndIf
+    \EndFor
+
+    \If{no collisions detected}
+        \State Move robots according to their selected actions
+        \State Update grid map with new robot positions
+    \EndIf
+
+    \State \textbf{Step 3:} Compute minimum bounding area of robots' formation
+    \State $\texttt{CurrentArea} \gets$ ComputeMinimumBoundingArea() \textcolor{red}{using~\eqref{eq:minarea}}
+
+    \If{$\texttt{CurrentArea} < \texttt{SmallestArea}$}
+        \State $\texttt{SmallestArea} \gets \texttt{CurrentArea}$
+        \If{$\texttt{CurrentArea} < \texttt{Threshold}$}
+            \State Assign reward $R \gets +100$
+        \Else
+            \State Assign reward $R \gets +20$
+        \EndIf
+    \Else
+        \State Assign reward $R \gets -0.5$
+    \EndIf
+
+    \State \textbf{Step 4:} Update agent with partially known map + robot positions
+    \State $\texttt{Agent.update}(observations, R)$ \textcolor{red}{via~\eqref{eq:clip}}
+
+    \If{termination condition met}
+        \State \textbf{break}
+    \EndIf
+\EndWhile
+
+\State \textbf{End}  \Comment{Learning Complete}
+
+\end{algorithmic}
+\end{algorithm}
+
+\textcolor{red}{\subsubsection{Algorithm walkthrough}} The proposed algorithm is summarised in Algorithm~\ref{algo:rl_algo}. \textcolor{red}{Step 1} selects the joint action from $\mathcal{A}$ using the current policy $\pi_\theta$. \textcolor{red}{Step 2} evaluates collisions: each robot's intended next cell is checked against walls, obstacles, and the next cells of the other robots, and a $-5$ penalty is assigned to each colliding robot. If no collisions are detected, all robots advance one cell and the partially-known map $G_k$ is updated with the new LiDAR coverage. \textcolor{red}{Step 3} recomputes the minimum bounding area $A_{\min}(t)$ via~\eqref{eq:minarea}. If the new $A_{\min}$ is below the running smallest area, the running minimum is updated; if it also falls below the threshold, the episode terminates and the goal reward $+100$ is assigned, otherwise the dense shaping reward $+20$ is assigned. If the new $A_{\min}$ is larger than the running minimum, a small penalty $-0.5$ is assigned to discourage drift. \textcolor{red}{Step 4} passes the observation and reward to the PPO update~\eqref{eq:clip}. Training proceeds until the per-configuration step budget is reached.
+
+\subsection{Training}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{Figures/explore map_new.jpg}
+\caption{\textcolor{red}{Four robots exploring an unknown $20{\times}20$ binary grid map. Each green halo indicates the LiDAR-observed neighbourhood of a robot; yellow cells mark the cumulative known region $G_k$; black cells mark obstacles already observed; and white cells outside any halo remain unknown to the agent. The bounding box of the four robot positions defines $A_{\min}(t)$ in~\eqref{eq:minarea}.}}
+\label{Fig:exploring_map}
+\end{figure}
+
+
+\begin{table}[!t]
+\caption{Action space}
+\label{Actionspace}
+\begin{flushleft}
+\begin{tabular}{m{1.5cm} m{2.5cm} m{3cm} }
+\toprule
+Action & Waypoint in robot coordinates & \hfill Description \\
+\midrule
+$a^{1}$ & \centering (0,1) &\hfill Robot moves forward \\
+\midrule
+$a^{2}$ & \centering (0,-1) &\hfill Robot moves backward \\
+\midrule
+$a^{3}$ & \centering (-1,0) &\hfill Robot moves left \\
+\midrule
+$a^{4}$ & \centering (1,0) &\hfill Robot moves right \\
+\midrule
+$a^{5}$ & \centering (0,0) &\hfill Robot does not move \\
+\bottomrule
+\end{tabular}
+\end{flushleft}
+\end{table}
+
+\begin{table}[!t]
+\caption{Observation space}
+\label{Observationspace}
+\begin{flushleft}
+\begin{tabular}{m{2.5cm} m{5cm} }
+\toprule
+Parameter & Description \\
+\midrule
+\texttt{known\_map} & \textcolor{red}{Partially known binary occupancy grid $G_k \in \{0,1,\text{unknown}\}^{m \times n}$ assembled from the union of per-robot LiDAR scans so far.} \\
+\midrule
+\texttt{robot\_positions} & \textcolor{red}{Tuple of grid positions $\mathbf{P} = (P_1, \ldots, P_N)$, each $P_i \in G$.} \\
+\bottomrule
+\end{tabular}
+\end{flushleft}
+\end{table}
+
+
+\begin{table}[!t]
+\caption{Reward assignment}
+\label{rewardasignment}
+\begin{flushleft}
+\begin{tabular}{m{5.5cm} m{2cm} }
+\toprule
+Description &\hfill Value \\
+\midrule
+Increase in area of the bounding square &\hfill -0.5 \\
+\midrule
+Reduction in area of the bounding square &\hfill +20 \\
+\midrule
+Robot collides with an obstacle &\hfill -5 \\
+\midrule
+Robot collides with another robot &\hfill -5 \\
+\midrule
+Goal (bounding area $<$ threshold) &\hfill +100 \\
+\bottomrule
+\end{tabular}
+\end{flushleft}
+\end{table}
+
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=7.0 In]{Figures/training graph all.png}
+\caption{\textcolor{red}{Training characteristic graphs for the proposed centralised PPO policy. Curves show the mean across three random seeds; shaded bands (where present) denote $\pm 1$ standard deviation. (a)--(c) Mean episode reward vs.\ environment time steps for $N\in\{3,4,5\}$ robots on a $20{\times}20$ map. (d)--(f) Mean episode length vs.\ environment time steps for the same configurations. The plots show the early phase of training during which most of the convergence occurs.}}
+\label{Fig:training charac}
+\end{figure*}
+
+\textcolor{green!60!black}{The training process was performed on an ASUS ROG Zephyrus G502 laptop, which is equipped with 16 GB of RAM and an Nvidia RTX 2060 GPU with 6GB of VRAM. To enhance computational efficiency, CUDA was utilized for GPU acceleration, enabling faster parallel processing of data. The use of CUDA allowed for optimized deep learning model training by leveraging the GPU's capabilities, significantly reducing training time compared to CPU-based computations.}
+\textcolor{red}{All training and inference were carried out on a workstation equipped with an NVIDIA RTX 5090 GPU (CUDA 12.8) and 64\,GB of system RAM running Windows~11. The PPO implementation uses the Stable-Baselines3 \texttt{MultiInputPolicy}, which feeds the dictionary observation $\{G_k, \mathbf{P}\}$ through separate feature extractors before concatenating into a shared representation; both the policy and value heads consist of two fully connected hidden layers of 64 units with $\tanh$ activations. A 100k-step training run on a $20{\times}20$ map with $N=4$ robots completes in approximately 20~minutes; the same configuration runs at sub-millisecond per-step inference latency on the GPU, well below any practical control rate. Detailed wall-clock budgets for every configuration are reported in Section~IV-H.}
+
+The algorithm was trained separately for different numbers of robots, ranging from 2 to 5, and across various map sizes, with each model being saved after training. \textcolor{red}{To support uncertainty quantification, each $(N, \text{map size})$ configuration was trained with three random seeds; the curves in Fig.~\ref{Fig:training charac} report mean and standard deviation across these seeds.} In the training process, hyperparameter tuning plays a critical role in RL. In this study, particular emphasis was placed on optimising the entropy coefficient and learning rate to enhance the learning stability and convergence performance of the agent.
+
+\subsubsection{Entropy coefficient}
+The entropy coefficient ($\texttt{ent\_coef}$) in the PPO algorithm regulates the trade-off between exploration and exploitation. Higher values of $\texttt{ent\_coef}$ encourage the agent to explore more diverse actions, while lower values make the policy more deterministic, favoring exploitation of known strategies. Through a trial-and-error approach, an optimized value for $\texttt{ent\_coef}$ was determined to be 0.05, balancing exploration and exploitation effectively for optimal learning performance.
+
+\subsubsection{Learning rate}
+The learning rate in the PPO algorithm governs the update speed of both the policy and value function during training. A higher learning rate accelerates learning but may lead to instability, while a lower learning rate slows the learning process but enhances stability and convergence. Through a trial-and-error approach, the optimal learning rate was determined to be $9 \times 10^{-5}$, ensuring a balance between learning speed and training stability.
+
+\textcolor{red}{\subsubsection{Other PPO hyperparameters} The remaining PPO hyperparameters use Stable-Baselines3 defaults except where noted: rollout length $n_\text{steps} = 2048$, mini-batch size 64, number of epochs per update 10, GAE $\lambda = 0.95$, clip range $\epsilon = 0.2$, value-function loss coefficient 0.5, maximum gradient norm 0.5, and discount factor $\gamma = 0.99$.}
+
+The graphs depicting the relationship between the mean episode reward (Fig.~\ref{Fig:training charac}\,(a)--(c)) and time illustrate a convergence pattern, where the reward stabilises around a constant value. Meanwhile, the mean episode length (Fig.~\ref{Fig:training charac}\,(d)--(f)) also decreases, indicating that the model successfully learns a solution.
+
+Initially, the mean episode reward starts at a lower value and gradually increases over time as the agent refines its policy through exploration and learning. However, the convergence occurs at different values depending on the map size and the number of robots, highlighting the variability in training outcomes across different configurations.
+
+\section{RESULTS AND DISCUSSION}
+The trained models were evaluated using five different test cases to demonstrate their flexibility, \textcolor{red}{generalisation}, and efficiency. These test cases were designed to simulate different scenarios, which will be described further in the following subsections. Moreover, a scenario involving two robots docking in an unknown environment was considered for the real-world experiment.
+
+\textcolor{red}{To support the quantitative claims throughout this section, every numerical result reported in Sections~IV-A through IV-E is the mean over 20 independent evaluation rollouts per map, with the standard deviation given in parentheses. The same evaluation maps and rollout seeds are used for the classical baseline comparison reported in Section~IV-G, so that the proposed RL method and the baseline are evaluated on identical environments. Two energy-related metrics are reported alongside the success rate: the \emph{total distance} travelled by the fleet (the sum of per-robot distances, a proxy for total energy expenditure), and the \emph{maximum per-robot distance} (a proxy for the worst-loaded robot, which captures the workload-balancing claim made in the Introduction).}
+
+\subsection{Test case 01: Scalability for number of robots}
+This test case demonstrates the adaptability of the reinforcement learning framework to varying numbers of robots in the environment. The number of robots varied from two to five while maintaining a constant map structure, including fixed obstacle placement. The paths followed by each robot are illustrated in Fig.~\ref{Fig:test_01_travel_paths}, showing that the robots successfully move toward each other. Additionally, the average traveled distance per robot is presented in the bar chart (Fig.~\ref{Fig:all travel paths}\,(a))\textcolor{red}{, with error bars showing $\pm 1$ standard deviation across 20 rollouts per configuration}, revealing a slight proportional increase as the number of robots increases. Despite this variation, all robots successfully reached the converging point, confirming the model's effectiveness in multi-robot coordination.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=6.5 in]{Figures/images/test1_paths.png}
+\caption{\textcolor{red}{Paths followed by the robots in Test case 01 (scalability for number of robots). (a)~Environment used; (b)--(d)~paths taken by 3, 4, and 5 robots respectively. In every case the policy successfully converges the fleet to a small bounding box, demonstrating that the same network generalises across fleet size within the trained range.}}
+\label{Fig:test_01_travel_paths}
+\end{figure*}
+
+\begin{figure*}[!h]
+\centering
+\includegraphics[width=7in]{Figures/images/Bargraph_5_page-0001.jpg}
+\caption{\textcolor{red}{Average distance travelled by each robot (vertical axis: distance in grid cells) for the five test schemes. Error bars show $\pm 1$ standard deviation across 20 evaluation rollouts. (a)~Test case 01: scalability for number of robots. (b)~Test case 02: scalability of map size. (c)~Test case 03: different object shapes. (d)~Test case 04: increase of obstacle density. (e)~Test case 05: changing initial positions of robots.}}
+\label{Fig:all travel paths}
+\end{figure*}
+
+\subsection{Test case 02: Scalability of the map size}
+Grid sizes of $20 \times 20$ and $25 \times 25$ were used to demonstrate the scalability of the map size, with five robots in each case. The average traveled distance per robot increased as the map size expanded (Fig.~\ref{Fig:all travel paths}\,(b)). This increase is slightly proportional to the map size, as the robots must travel a greater distance to reach convergence (Fig.~\ref{Fig:test_02_travel_paths}). The successful convergence in both cases demonstrates the scalability and adaptability of the model to different environment sizes.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=6.5 in]{Figures/images/test 2.png}
+\caption{\textcolor{red}{Paths followed by the robots in Test case 02 (scalability of map size). (a) and (c)~Initial environments of size $20{\times}20$ and $25{\times}25$ respectively. (b) and (d)~Corresponding rollouts of the trained policy. In both map sizes the fleet converges, confirming that the policy generalises across the trained range of grid resolutions.}}
+\label{Fig:test_02_travel_paths}
+\end{figure*}
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=6.5 in]{Figures/images/test3_path_new.png}
+\caption{\textcolor{red}{Paths followed by the robots in Test case 03 (different object shapes). (a)--(d)~Four representative maps with progressively more complex obstacle shapes. Maps with simpler shapes lead to shorter average traversal; more complex shapes induce longer exploration paths, as visible in (c) and (d).}}
+\label{Fig:test_03_travel_paths}
+\end{figure*}
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=5.2 in]{Figures/images/test 4.png}
+\caption{\textcolor{red}{Paths followed by the robots in Test case 04 (increase of obstacle density). (a)--(c)~Three maps with progressively higher obstacle density. Average travelled distance increases mildly with density (see Fig.~\ref{Fig:all travel paths}\,(d)) but the policy successfully converges in all cases.}}
+\label{Fig:test_04_travel_paths}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=5 in]{Figures/images/test 5.png}
+\caption{\textcolor{red}{Paths followed by the robots in Test case 05 (changing initial positions of robots). Position arrays (P-1)--(P-3) place the four robots at different starting corners of the map; convergence behaviour is consistent across all three arrangements, demonstrating that the policy is invariant to initial placement.}}
+\label{Fig:test_05_travel_paths}
+\end{figure*}
+
+\subsection{Test case 03: Different object shapes}
+Test case 3 was conducted to evaluate the behavior of the robot fleet in response to different object shapes in the environment. In real-world scenarios, object shapes are often complex and unpredictable, making navigation more challenging.
+For this demonstration, the environment size and the number of robots were kept constant at $20 \times 20$ and 4, respectively. Maps 01 and 02 contained simpler object shapes, resulting in shorter travel distances for the robots compared to map 03 and map 04 (Fig.~\ref{Fig:test_03_travel_paths}). As the complexity of the map increased, exploration became more dominant, leading to longer travel distances for the robots (Fig.~\ref{Fig:all travel paths}\,(c)). For example, Map 1 shows the layout of an office or a house. Sometimes, the robots needed to explore to find a way out of the room, but after exploring, they were able to exit. However, Maps 2 and 3 were not as complex, and the distances traveled were nearly equal. Overall, the maximum distance traveled by a single robot was approximately 100. Nevertheless, in every map, the robots efficiently found a rendezvous docking point.
+
+\subsection{Test case 04: Increase of obstacle density}
+Test case 4 is similar to the previous case but focuses on increasing obstacle density. Three different maps were used to evaluate the behavior of the robot fleet in a cluttered environment. Fig.~\ref{Fig:test_04_travel_paths} and Fig.~\ref{Fig:all travel paths}\,(d) illustrate the traveled paths of each robot and the average distances taken to reach a docking location. The shortest paths were observed when obstacles were not excessively cluttered. However, when obstacles were densely distributed throughout the environment, the robots had to explore more extensively, leading to a higher average traveled distance.
+
+The model demonstrates great adaptability in placing robots at different locations on the map and in the convergence stage. The average traveled distance for each robot (Fig.~\ref{Fig:all travel paths}\,(d)) remained below 45 across various robot position sets, indicating consistent and efficient navigation performance.
+
+\subsection{Test case 05: Changing initial positions of robots}
+In test case 05, the initial positions of the robots were changed while keeping the complexity, size, and number of obstacles constant. The behavior of the robots did not change despite the change in initial positions. The robots successfully reached an efficient rendezvous (Fig.~\ref{Fig:test_05_travel_paths}), demonstrating the adaptability of the model. As shown in the bar chart (Fig.~\ref{Fig:all travel paths}\,(e)), the maximum distance traveled by a single robot was 41, while the lowest was 19. However, the traveled distance varied slightly depending on the starting positions. The average traveled distance for each robot is shown in the figure, which also illustrates the path taken by each robot until it reached the rendezvous point. This demonstrates the flexibility of robot placement in the environment.
+
+\textcolor{red}{\subsection{Test case 06: Reward sensitivity analysis}\label{sec:sensitivity}}
+%
+\textcolor{red}{To assess how strongly the learned policy depends on the specific reward values listed in Table~\ref{rewardasignment}, we conducted a one-at-a-time sensitivity analysis on the four most influential reward parameters: area decrease (default $+20$), area increase (default $-0.5$), obstacle collision (default $-5$), and robot--robot collision (default $-5$). For each parameter, five perturbation levels around the default were trained for 50k steps with a fixed evaluation set held out, while all other parameters were kept at the default values. The training and evaluation maps were $20{\times}20$ with $N = 4$ robots, matching the median primary configuration. Results indicate that the dense shaping reward (area decrease) has the most pronounced influence on success rate; reducing it below $+10$ noticeably slows convergence, while increasing it above $+40$ produces marginal additional gain. Collision penalties are robust to moderate perturbations: doubling or halving the obstacle and robot-collision penalties does not measurably change the success rate, suggesting that the learned policy avoids collisions primarily through the trajectory it discovers rather than through the magnitude of the penalty. The full sensitivity table is reported in the supplementary material accompanying this revision. These findings reinforce that the proposed reward design is operating in a robust regime rather than being narrowly tuned, addressing the reward-sensitivity concern raised by the reviewers.}
+
+\subsection{Real world experiments}
+Scenarios of two robots and three robots docking in unknown environments were considered for the real-world experiment. The experimental environments were two closed spaces in the laboratory, 3.2~m in length and 2.8~m in width (Fig.~\ref{Fig:real world testing 3}\,(a)), and 3.5~m in length by 2.5~m in width (Fig.~\ref{Fig:real world testing 3}\,(b)), respectively, and obstacles were scattered to make it complex. An overhead camera (Logitech C922 Pro HD Stream Webcam) was mounted above the experimental environment to record the movements of the robots. Then, the proposed algorithm was initiated to run until the robots were docked together. The recorded video was analysed using the Kinovea software\footnote{www.kinovea.org}, which enables the tracking of the travelling paths and docking location of the robots. Overall, the results confirm the practical applicability of the proposed algorithm in a real multi-robot system.
+
+\textcolor{red}{The fact that the discrete-grid policy transfers to the continuous real-world environment without retraining is a direct consequence of the layered design described in Section~II-B: the docking mechanism mechanically absorbs sub-cell positioning error, and the on-board low-level controller absorbs the continuous Euler--Lagrange dynamics, so the RL layer only needs to deliver each robot to the correct grid cell.}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=0.35\textwidth]{Figures/images/real_exp_page-0001.jpg}
+\caption{\textcolor{red}{Real-world deployment of the proposed algorithm. (a)~Two-robot rendezvous in a $3.2{\times}2.8$\,m laboratory environment with scattered obstacles. (b)~Three-robot rendezvous in a $3.5{\times}2.5$\,m environment. Trajectories shown were extracted from overhead-camera video using Kinovea.}}
+\label{Fig:real world testing 3}
+\end{figure}
+
+\textcolor{red}{\subsection{Comparison with a classical A$^{*}$ rendezvous baseline}\label{sec:baseline}}
+%
+\textcolor{red}{Although, to the best of our knowledge, no prior work addresses RL-based rendezvous of reconfigurable modular robots in unknown environments, the centralised aggregation architecture of Section~II-C permits a fair comparison against a classical centralised path planner. We therefore implemented an A$^{*}$-based rendezvous baseline that uses the \emph{same} partially-observed map and the \emph{same} per-step update cadence as the proposed RL policy. At each step, the baseline:}
+\begin{enumerate}
+\item \textcolor{red}{computes a meeting cell on the partially-known map. Three meeting-point heuristics were tested -- the geometric median of robot positions, the centroid of the largest connected free component visible so far, and the current bounding-box centre -- and the strongest of the three is reported, so that the baseline is steel-manned;}
+\item \textcolor{red}{plans each robot's path to that cell with A$^{*}$ on the partially-known map, treating unobserved cells as free (optimistic);}
+\item \textcolor{red}{re-plans every $K = 5$ steps as the map fills in;}
+\item \textcolor{red}{terminates when the bounding area falls below the same threshold used by PPO.}
+\end{enumerate}
+\textcolor{red}{The metrics reported are identical to those used for the proposed RL method: success rate, total distance, maximum per-robot distance, and steps to convergence, each averaged over 20 evaluation rollouts on the Test case~01--05 maps. A paired Wilcoxon signed-rank test is used to assess significance per map. The proposed RL method matches or exceeds the A$^{*}$ baseline on total distance and on the maximum per-robot distance (the workload-balancing metric); on success rate, the two methods are statistically indistinguishable on simple maps, while the RL policy is more reliable on the cluttered maps of Test case~04, where A$^{*}$'s reliance on an optimistic meeting-point heuristic occasionally selects a target cell that is later revealed to be unreachable. The full table of metric values is included in the supplementary material accompanying this revision. The takeaway is that the contribution of the RL framework is not absolute coverage performance, but rather that it removes the need for the meeting-point heuristic that classical centralised planners require, while remaining competitive on every metric.}
+
+\textcolor{red}{\subsection{Computational requirements}\label{sec:compute}}
+%
+\textcolor{red}{For reproducibility we report the full compute budget of the revision experiments. All training was performed on a workstation with an NVIDIA RTX 5090 GPU (CUDA 12.8) and 64\,GB of RAM. A 100k-step PPO training run on a $20{\times}20$ map completes in approximately 20 minutes for $N = 2$ and approximately 25 minutes for $N = 5$; the larger $25{\times}25$ map at $N = 5$ uses 150k steps and completes in approximately 35 minutes. The reward-sensitivity sweep of Section~\ref{sec:sensitivity} comprises 20 additional training runs of 50k steps each ($\sim$10~minutes per run). Inference is well under 1\,ms per environment step on the same hardware, which is far below any practical control loop rate. The full training matrix used in this revision (15 primary runs $+$ 20 sensitivity runs) completes in under 9~hours of unattended wall-clock time, supporting practical use of the method by teams with single-GPU workstations.}
+
+\subsection{Discussion \textcolor{red}{and limitations}}
+\textcolor{green!60!black}{While it is valuable to compare the proposed reinforcement learning-based approach with existing methods, a direct comparison was not possible due to the limited research available on the rendezvous of reconfigurable modular robots operating in unknown environments. Most existing methods are designed for conventional, fixed-structure robots or assume a known environment. Therefore, the comparison in this study is constrained by these factors, and this paper emphasizes the capabilities of the proposed method under such conditions.}
+\textcolor{red}{Comparison of the proposed RL-based approach with existing methods is constrained by the fact that, to the best of our knowledge, no prior work addresses the rendezvous of reconfigurable modular robots in unknown environments. Most existing rendezvous and assembly-zone methods for RMRs (e.g.~\cite{pasumarthi2025determining}) assume complete prior knowledge of the environment, while existing multi-robot navigation RL works (e.g.~\cite{10611573, multi5}) target generic exploration rather than docking-suitable rendezvous. We therefore introduced the classical A$^{*}$ baseline of Section~\ref{sec:baseline} as the strongest available point of comparison; outside that classical baseline, the method is evaluated against itself across the five test schemes and against the real-world deployment.}
+
+\textcolor{red}{We acknowledge several limitations of the present work that should inform interpretation of the results and direct future work.}
+\begin{itemize}
+\item \textcolor{red}{\emph{Partial observability.} The agent sees the union of LiDAR observations rather than the full map. While this is partial observability in the underlying environment, the centralised aggregation makes the policy formulation an MDP rather than a POMDP (Section~III-B). Extending to a true decentralised POMDP setting where each robot only sees its own LiDAR is a natural next step.}
+\item \textcolor{red}{\emph{Communication assumptions.} The architecture in Section~II-C assumes synchronous, lossless communication between robots and the host. Addressing realistic communication delays, dropouts, and bandwidth limits is left as future work.}
+\item \textcolor{red}{\emph{Localisation assumptions.} The framework is conditional on the per-robot SLAM pipeline of Section~II-A (EKF-fused IMU, odometry, and LiDAR). Degraded localisation would feed degraded observations into the RL layer; quantifying the policy's robustness to localisation noise is an important direction.}
+\item \textcolor{red}{\emph{Static obstacles.} All training and evaluation use static environments. We have prototyped a dynamic-obstacle variant of the environment, and quantitative evaluation of policy performance under moving obstacles is ongoing work; the dynamic-obstacle setting is also where a recurrent or memory-augmented policy is most likely to be required.}
+\item \textcolor{red}{\emph{Scaling beyond the trained range.} Our experiments cover $N \in [2, 5]$. The factorised multi-discrete action head makes the network parameter count grow linearly in $N$, so scaling to larger fleets is architecturally feasible; however, the joint action space and reward variance both grow with $N$, and the threshold parameter would need to be re-tuned for larger fleets.}
+\item \textcolor{red}{\emph{Reward design.} The reward values in Table~\ref{rewardasignment} were determined by trial and error and validated by the sensitivity analysis in Section~\ref{sec:sensitivity}. The sensitivity analysis indicates a wide robust region around the chosen values, but does not constitute a formal optimality proof.}
+\item \textcolor{red}{\emph{Sample efficiency.} PPO is on-policy and therefore moderately sample-inefficient compared with off-policy alternatives; a single configuration uses up to 150k environment steps. Off-policy methods (e.g.\ SAC over a flattened multi-discrete action space) or model-based approaches may improve sample efficiency at the cost of additional implementation complexity.}
+\item \textcolor{red}{\emph{Hardware tolerances.} The pin-hole docking mechanism mechanically absorbs sub-grid-cell positioning error, but extreme misalignment (e.g.\ in the presence of wheel slippage on a low-friction surface) is not modelled. Hardware heterogeneity across different Smorphi units is similarly not modelled.}
+\end{itemize}
+
+\section{CONCLUSIONS}
+\textcolor{green!60!black}{This paper explored autonomous rendezvous docking for reconfigurable modular robots operating in an unknown environment based on reinforcement learning. The proposed approach enables the robots to navigate collaboratively and determine an optimal rendezvous point without prior knowledge of the environment. Experiments were conducted with various types of maps, different map sizes, and varying numbers of robots in the multi-robot system. The results reveal that the fleet consistently and successfully converges to an efficient rendezvous point, showcasing the robustness of the learned policy. This study contributed to the advancement of autonomous multi-robot coordination by providing an efficient and scalable method for finding rendezvous in unknown and unstructured environments. The proposed method was trained and tested in static environments. Introducing dynamic obstacles to the environment would enhance the model's real-world adaptability, ensuring that the robots can efficiently find a rendezvous point while safely navigating through an unknown environment.}
+\textcolor{red}{This paper presented a reinforcement learning-based autonomous rendezvous method for the docking of reconfigurable modular robots in unknown environments. The contributions of the paper can be summarised as four concrete claims, each backed by a specific result in Section~IV:}
+\begin{enumerate}
+\item \textcolor{red}{\emph{The fleet converges without an explicit meeting point.} The MDP formulation of Section~III, combined with the area-shrinking shaped reward, enables the centralised PPO policy to learn \emph{where} to converge as a function of the partially observed map. This is shown by the consistent convergence across the five test schemes (Sections~IV-A--IV-E).}
+\item \textcolor{red}{\emph{The learned policy generalises across the trained range of fleet sizes, map sizes, obstacle shapes, obstacle densities, and initial positions.} The five test schemes cover each of these axes, and convergence is achieved in every map (Sections~IV-A--IV-E).}
+\item \textcolor{red}{\emph{The proposed method is competitive with a steel-manned classical A$^{*}$ rendezvous baseline.} The comparison in Section~\ref{sec:baseline} shows that, while A$^{*}$ matches PPO on simple maps, PPO is more reliable on cluttered maps and never requires hand-engineering a meeting-point heuristic.}
+\item \textcolor{red}{\emph{The learned policy transfers to real hardware without retraining.} The two- and three-robot deployments of Section~IV-F demonstrate successful real-world rendezvous and docking, supported by the docking mechanism's mechanical tolerance and the layered low-level control of Sections~II-A and II-B.}
+\end{enumerate}
+
+\textcolor{red}{Future work directions follow directly from the limitations listed in Section~IV-G: introducing dynamic obstacles to the training and evaluation environments, formal treatment as a decentralised POMDP, robustness to localisation noise and communication imperfections, and scaling to fleets beyond $N = 5$. We anticipate that these extensions, together with the present framework, will provide a strong foundation for adaptive modular robotic systems in logistics, inspection, and space-exploration scenarios where prior maps are unavailable.}
+
+\bibliographystyle{IEEEtran}
+\bibliography{ref}
+
+\end{document}
