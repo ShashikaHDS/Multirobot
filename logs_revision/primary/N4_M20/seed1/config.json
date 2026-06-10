@@ -1,0 +1,23 @@
+{
+  "git_commit": "10198b2",
+  "torch": "2.11.0+cu128",
+  "cuda": "12.8",
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "n_robots": 4,
+  "map_size": 20,
+  "seed": 1,
+  "total_timesteps": 100000,
+  "n_envs": 16,
+  "vec": "subproc",
+  "learning_rate": 9e-05,
+  "ent_coef": 0.05,
+  "reward": {
+    "area_decrease": 20,
+    "area_increase": -0.5,
+    "collision": -5,
+    "goal": 100
+  },
+  "wall_clock_sec": 227.84,
+  "tag": "primary",
+  "model_path": "logs_revision/primary/N4_M20/seed1/model.zip"
+}
