@@ -111,17 +111,31 @@ class RendezvousEnv(gym.Env):
         self._step_count: int = 0
 
     def reset(self, seed: Optional[int] = None, options=None):
+        # super().reset(seed=seed) sets self.np_random to a seeded RNG.
+        # Using self.np_random everywhere keeps episode-to-episode behaviour
+        # reproducible and lets SB3 / VecEnv drive seeding via env.reset(seed=).
         super().reset(seed=seed)
-        rng = np.random.default_rng(seed)
-        self._true_map = _generate_map(rng, self.m, self.n, self.obstacle_density)
-        free_cells = np.argwhere(self._true_map == 0)
-        anchor = tuple(free_cells[rng.integers(0, len(free_cells))])
-        reachable = _bfs_reachable(self._true_map, anchor)
-        valid = np.argwhere(reachable)
-        if len(valid) < self.n_robots:
-            # Fallback: regenerate sparser map.
-            return self.reset(seed=seed + 1 if seed is not None else None)
-        idx = rng.choice(len(valid), size=self.n_robots, replace=False)
+        valid = None
+        for _attempt in range(64):
+            self._true_map = _generate_map(
+                self.np_random, self.m, self.n, self.obstacle_density
+            )
+            free_cells = np.argwhere(self._true_map == 0)
+            if len(free_cells) == 0:
+                continue
+            anchor = tuple(free_cells[self.np_random.integers(0, len(free_cells))])
+            reachable = _bfs_reachable(self._true_map, anchor)
+            cand = np.argwhere(reachable)
+            if len(cand) >= self.n_robots:
+                valid = cand
+                break
+        if valid is None:
+            raise RuntimeError(
+                f"Could not generate a connected free component large enough "
+                f"for {self.n_robots} robots on a {self.m}x{self.n} grid after "
+                f"64 attempts. Lower obstacle_density or reduce n_robots."
+            )
+        idx = self.np_random.choice(len(valid), size=self.n_robots, replace=False)
         self._positions = valid[idx].astype(np.int32)
         self._known_map = np.full((self.m, self.n), -1, dtype=np.int8)
         self._scan_all()
@@ -208,10 +222,24 @@ def make_env(n_robots: int, map_size: int, seed: int = 0, **kwargs):
     Each env is wrapped in stable_baselines3.common.monitor.Monitor so that
     SB3 sees per-episode rewards and lengths (populating rollout/ep_rew_mean
     and rollout/ep_len_mean in TensorBoard).
+
+    The Monitor wrapper must be the OUTERMOST wrapper inside the thunk so
+    that no other wrapper rewrites info[] after it (any wrapper that
+    replaces info would strip the 'episode' key Monitor adds at terminal
+    states, which is precisely what feeds rollout/ep_rew_mean).
+
+    Seeding: we do NOT call env.reset(seed=seed) here. SubprocVecEnv calls
+    env.reset() on first use, which would discard the seeded reset done in
+    the thunk. We instead expose `seed` via the env constructor and seed
+    each Box/MultiDiscrete space; the actual stochastic map generation in
+    reset() uses self.np_random which is seeded by the eventual
+    env.reset(seed=...) call from SB3.
     """
     def _thunk():
         env = RendezvousEnv(n_robots=n_robots, map_size=map_size, **kwargs)
         env = Monitor(env)
-        env.reset(seed=seed)
+        # Seed only the action/observation spaces, not the env itself.
+        env.action_space.seed(seed)
+        env.observation_space.seed(seed)
         return env
     return _thunk

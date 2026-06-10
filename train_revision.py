@@ -97,7 +97,16 @@ def main():
     )
 
     t0 = time.time()
-    model.learn(total_timesteps=args.steps, callback=ckpt_cb, progress_bar=True)
+    # tb_log_name="PPO" keeps the TB subdir stable across re-runs of the same
+    # (tag, config, seed); SB3 still appends _1/_2/... if the dir already
+    # exists. We pass an explicit value so the subdir name is predictable for
+    # downstream eval/plotting scripts.
+    model.learn(
+        total_timesteps=args.steps,
+        callback=ckpt_cb,
+        progress_bar=True,
+        tb_log_name="PPO",
+    )
     wall = time.time() - t0
 
     model_path = run_dir / "model.zip"
