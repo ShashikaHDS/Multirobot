@@ -45,7 +45,7 @@ def main():
     p.add_argument("--n-robots", type=int, required=True)
     p.add_argument("--map-size", type=int, required=True)
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--steps", type=int, default=100_000)
+    p.add_argument("--steps", type=int, default=200_000)
     p.add_argument("--n-envs", type=int, default=16)
     p.add_argument("--tag", type=str, default="primary")
     p.add_argument("--logdir", type=str, default="logs_revision")

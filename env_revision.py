@@ -124,7 +124,10 @@ class RendezvousEnv(gym.Env):
         self._positions = valid[idx].astype(np.int32)
         self._known_map = np.full((self.m, self.n), -1, dtype=np.int8)
         self._scan_all()
-        self._best_area = self._compute_bounding_area()
+        # Init smallest-area to infinity (paper Algorithm 1 line 4). This way
+        # the first step always triggers the +20 area-decrease reward,
+        # giving the policy a non-sparse early signal.
+        self._best_area = float("inf")
         self._step_count = 0
         return self._get_obs(), {}
 

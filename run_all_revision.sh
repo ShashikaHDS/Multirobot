@@ -41,17 +41,18 @@ wait_for_slot() {
 
 run_primary() {
   echo "== Primary matrix (15 runs, concurrency=$CONCURRENCY) =="
-  # N in {2,3,4,5} on 20x20, 3 seeds, 100k steps
+  # N in {2,3,4,5} on 20x20, 3 seeds, 200k steps
+  # (bumped from 100k to give the area-shrinking reward more time at higher N).
   for n in 2 3 4 5; do
     for s in 0 1 2; do
       wait_for_slot
-      run_one "$n" 20 "$s" 100000 &
+      run_one "$n" 20 "$s" 200000 &
     done
   done
-  # N=5 on 25x25, 3 seeds, 150k steps
+  # N=5 on 25x25, 3 seeds, 300k steps.
   for s in 0 1 2; do
     wait_for_slot
-    run_one 5 25 "$s" 150000 &
+    run_one 5 25 "$s" 300000 &
   done
   wait
   echo "== Primary matrix complete =="
