@@ -12,6 +12,7 @@ from typing import Optional, Tuple
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
+from stable_baselines3.common.monitor import Monitor
 
 
 REWARD_AREA_DECREASE = +20.0
@@ -202,9 +203,15 @@ class RendezvousEnv(gym.Env):
 
 
 def make_env(n_robots: int, map_size: int, seed: int = 0, **kwargs):
-    """Factory for SubprocVecEnv: returns a callable that builds an env."""
+    """Factory for SubprocVecEnv: returns a callable that builds an env.
+
+    Each env is wrapped in stable_baselines3.common.monitor.Monitor so that
+    SB3 sees per-episode rewards and lengths (populating rollout/ep_rew_mean
+    and rollout/ep_len_mean in TensorBoard).
+    """
     def _thunk():
         env = RendezvousEnv(n_robots=n_robots, map_size=map_size, **kwargs)
+        env = Monitor(env)
         env.reset(seed=seed)
         return env
     return _thunk
