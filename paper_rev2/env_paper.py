@@ -1,0 +1,426 @@
+"""Canonical rendezvous environment for the paper revision (rev2).
+
+This is the single source of truth for the environment described in the
+manuscript (Sections III-B, Tables I-III).  It replaces the legacy v5.py
+environment for all new training, evaluation, baseline, and sensitivity
+experiments, fixing the following defects of the legacy code:
+
+  1. Collision penalties were dead code (reward assigned, then overwritten
+     by the area-shaping branch).  Here every reward term accumulates.
+  2. The `valid_move` latch disabled robot-robot collision detection for
+     all robots after the first conflict, and swap/pass-through conflicts
+     were never detected.  Here conflicts are resolved with an iterative
+     two-pass scheme (same-target, swap, occupied-cell).
+  3. Unknown cells were indistinguishable from free cells (known_map
+     initialised to 0).  Here known_map uses -1 = unknown, 0 = free,
+     1 = obstacle, matching Table II.
+  4. Episodes had no step limit.  Here episodes truncate at max_steps
+     (reported via gymnasium's `truncated`, so SB3 bootstraps correctly).
+  5. No seeding existed and the map generator mixed two RNG streams.
+     Here a single numpy Generator drives map generation, spawning, and
+     everything else; reset(seed=...) is fully reproducible.
+  6. pygame rendering ran inside step() during training.  Here rendering
+     only happens when render_mode="human" is requested.
+  7. Training started at import time (no __main__ guard).  This module
+     has no side effects on import.
+
+Reward table (paper Table III):
+    area decrease (below previous best)   +20
+    area increase (above previous step)   -0.5
+    obstacle collision (per robot)         -5
+    robot-robot collision (per robot)      -5
+    goal (bounding square <= threshold,
+          square region obstacle-free)   +100  -> terminated
+
+Bounding-area semantics: the paper's Table III and Section III text refer
+to the *bounding square*; legacy v5.py also used the square.  We keep the
+square: side = max(x-extent, y-extent), area = side**2, anchored at
+(min_x, min_y).  NOTE: Eq. (5) in the current manuscript states the
+rectangle product instead -- the equation should be corrected in the
+revision (see README).
+
+Goal check: evaluated every step (area <= threshold AND the anchored
+square is inside the map and obstacle-free), independently of whether the
+area is a new best.  Algorithm 1 in the manuscript nests the goal check
+under the improvement branch; the revision should update that line.
+"""
+
+from dataclasses import dataclass, field, asdict
+from typing import Optional, Tuple, List
+
+import numpy as np
+import gymnasium as gym
+from gymnasium import spaces
+
+UNKNOWN, FREE, OBSTACLE = -1, 0, 1
+
+
+@dataclass
+class RewardConfig:
+    """Table III values. Sensitivity analysis perturbs these one at a time."""
+    area_decrease: float = 20.0
+    area_increase: float = -0.5
+    collide_obstacle: float = -5.0
+    collide_robot: float = -5.0
+    goal: float = 100.0
+
+
+@dataclass
+class EnvConfig:
+    num_robots: int = 4
+    rows: int = 20
+    cols: int = 20
+    lidar_radius: int = 1              # Chebyshev radius -> (2r+1)^2 window
+    threshold_area: int = 16           # bounding-square area for success (4x4)
+    max_steps: int = 300
+    # map generator (ported from map_gen_v4, now seeded and bounded)
+    num_clusters: int = 5
+    cluster_size_range: Tuple[int, int] = (2, 10)
+    min_cluster_distance: float = 3.0
+    rewards: RewardConfig = field(default_factory=RewardConfig)
+
+
+class MapGen:
+    """Seeded port of map_gen_v4.generate_connected_clusters_map.
+
+    Semantics preserved: cluster centres rejection-sampled in the interior
+    with a minimum Euclidean distance between centres; clusters grown
+    8-directionally, interior-only (the 1-cell border ring stays free);
+    free space made a single 4-connected component by converting
+    unreachable free pockets into obstacles.
+
+    Added: every rejection/growth loop is bounded, and all randomness
+    comes from the numpy Generator passed in.
+    """
+
+    @staticmethod
+    def generate(rows: int, cols: int, num_clusters: int,
+                 cluster_size_range: Tuple[int, int], min_distance: float,
+                 rng: np.random.Generator) -> np.ndarray:
+        grid = np.zeros((rows, cols), dtype=np.int8)
+
+        # --- cluster centres ---
+        centres: List[Tuple[int, int]] = []
+        tries = 0
+        while len(centres) < num_clusters and tries < 5000:
+            tries += 1
+            c = (int(rng.integers(1, rows - 1)), int(rng.integers(1, cols - 1)))
+            if all(np.hypot(c[0] - o[0], c[1] - o[1]) >= min_distance for o in centres):
+                centres.append(c)
+
+        # --- grow clusters (8-directional, interior only) ---
+        directions = [(-1, -1), (-1, 0), (-1, 1), (0, -1),
+                      (0, 1), (1, -1), (1, 0), (1, 1)]
+        for cx, cy in centres:
+            size = int(rng.integers(cluster_size_range[0], cluster_size_range[1] + 1))
+            cells = [(cx, cy)]
+            grid[cx, cy] = OBSTACLE
+            stuck = 0
+            while len(cells) < size and stuck < 200:
+                base = cells[int(rng.integers(0, len(cells)))]
+                order = rng.permutation(len(directions))
+                grew = False
+                for k in order:
+                    dx, dy = directions[k]
+                    nx, ny = base[0] + dx, base[1] + dy
+                    if 1 <= nx < rows - 1 and 1 <= ny < cols - 1 and grid[nx, ny] == FREE:
+                        grid[nx, ny] = OBSTACLE
+                        cells.append((nx, ny))
+                        grew = True
+                        break
+                stuck = 0 if grew else stuck + 1
+
+        # --- single 4-connected free component (fill unreachable pockets) ---
+        free = np.argwhere(grid == FREE)
+        if len(free) == 0:
+            return grid
+        start = tuple(free[0])          # (0,0) is always free (border ring)
+        seen = np.zeros_like(grid, dtype=bool)
+        stack = [start]
+        seen[start] = True
+        while stack:
+            x, y = stack.pop()
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < rows and 0 <= ny < cols and not seen[nx, ny] \
+                        and grid[nx, ny] == FREE:
+                    seen[nx, ny] = True
+                    stack.append((nx, ny))
+        grid[(grid == FREE) & (~seen)] = OBSTACLE
+        return grid
+
+
+class RendezvousEnv(gym.Env):
+    """Centralised multi-robot rendezvous on a partially observed grid."""
+
+    metadata = {"render_modes": ["human"], "render_fps": 10}
+
+    # action encoding kept from v5.py: 0=up(x-1) 1=down(x+1) 2=left(y-1) 3=right(y+1) 4=stay
+    _MOVES = {0: (-1, 0), 1: (1, 0), 2: (0, -1), 3: (0, 1), 4: (0, 0)}
+
+    def __init__(self, config: Optional[EnvConfig] = None,
+                 fixed_map: Optional[np.ndarray] = None,
+                 fixed_starts: Optional[np.ndarray] = None,
+                 render_mode: Optional[str] = None,
+                 seed: Optional[int] = None):
+        super().__init__()
+        self.cfg = config or EnvConfig()
+        self.render_mode = render_mode
+        self._fixed_map = None if fixed_map is None else np.array(fixed_map, dtype=np.int8)
+        self._fixed_starts = None if fixed_starts is None else np.array(fixed_starts, dtype=np.int32)
+        if self._fixed_map is not None:
+            r, c = self._fixed_map.shape
+            self.cfg.rows, self.cfg.cols = r, c
+        if self._fixed_starts is not None:
+            assert len(self._fixed_starts) == self.cfg.num_robots, \
+                "fixed_starts must have one row per robot"
+
+        n, R, C = self.cfg.num_robots, self.cfg.rows, self.cfg.cols
+        self.action_space = spaces.MultiDiscrete([5] * n)
+        self.observation_space = spaces.Dict({
+            "known_map": spaces.Box(low=-1, high=1, shape=(R, C), dtype=np.int8),
+            "robot_positions": spaces.Box(low=0, high=max(R, C) - 1,
+                                          shape=(n, 2), dtype=np.int32),
+        })
+
+        self._np_random_seed = seed
+        self.np_random, _ = gym.utils.seeding.np_random(seed)
+
+        self.grid_map: np.ndarray = np.zeros((R, C), dtype=np.int8)
+        self.known_map: np.ndarray = np.full((R, C), UNKNOWN, dtype=np.int8)
+        self.positions: np.ndarray = np.zeros((n, 2), dtype=np.int32)
+        self.best_area: int = 0
+        self.prev_area: int = 0
+        self.step_count: int = 0
+        self.distances: np.ndarray = np.zeros(n, dtype=np.int64)
+        self._screen = None
+
+    # ------------------------------------------------------------------ #
+    # geometry                                                           #
+    # ------------------------------------------------------------------ #
+    def _bounding_square(self) -> Tuple[int, Tuple[int, int, int, int]]:
+        """Return (area, (min_x, min_y, side)) of the fleet bounding square.
+
+        side = max extent over both axes; square anchored at (min_x, min_y).
+        """
+        xs, ys = self.positions[:, 0], self.positions[:, 1]
+        min_x, max_x = int(xs.min()), int(xs.max())
+        min_y, max_y = int(ys.min()), int(ys.max())
+        side = max(max_x - min_x, max_y - min_y) + 1
+        return side * side, (min_x, min_y, side, side)
+
+    def _square_free(self, min_x: int, min_y: int, side: int) -> bool:
+        if min_x + side > self.cfg.rows or min_y + side > self.cfg.cols:
+            return False
+        region = self.grid_map[min_x:min_x + side, min_y:min_y + side]
+        return bool((region == FREE).all())
+
+    def _reveal(self, pos: np.ndarray) -> None:
+        r = self.cfg.lidar_radius
+        x0, x1 = max(0, pos[0] - r), min(self.cfg.rows, pos[0] + r + 1)
+        y0, y1 = max(0, pos[1] - r), min(self.cfg.cols, pos[1] + r + 1)
+        self.known_map[x0:x1, y0:y1] = self.grid_map[x0:x1, y0:y1]
+
+    # ------------------------------------------------------------------ #
+    # gym API                                                            #
+    # ------------------------------------------------------------------ #
+    def reset(self, *, seed: Optional[int] = None, options=None):
+        super().reset(seed=seed)
+        cfg = self.cfg
+
+        for _attempt in range(64):
+            if self._fixed_map is not None:
+                self.grid_map = self._fixed_map.copy()
+            else:
+                self.grid_map = MapGen.generate(
+                    cfg.rows, cfg.cols, cfg.num_clusters,
+                    cfg.cluster_size_range, cfg.min_cluster_distance,
+                    self.np_random)
+
+            if self._fixed_starts is not None:
+                self.positions = self._fixed_starts.copy()
+            else:
+                free_cells = np.argwhere(self.grid_map == FREE)
+                if len(free_cells) < cfg.num_robots:
+                    continue
+                idx = self.np_random.choice(len(free_cells),
+                                            size=cfg.num_robots, replace=False)
+                self.positions = free_cells[idx].astype(np.int32)
+
+            area, _ = self._bounding_square()
+            # don't start the episode already solved (legacy envs did, which
+            # produced trivial 1-step successes in the stored revision data)
+            if area > cfg.threshold_area or self._fixed_starts is not None:
+                break
+
+        self.known_map = np.full((cfg.rows, cfg.cols), UNKNOWN, dtype=np.int8)
+        for p in self.positions:
+            self._reveal(p)
+
+        self.best_area, _ = self._bounding_square()
+        self.prev_area = self.best_area
+        self.step_count = 0
+        self.distances = np.zeros(cfg.num_robots, dtype=np.int64)
+
+        return self._obs(), {"bounding_area": self.best_area}
+
+    def step(self, actions):
+        cfg = self.cfg
+        self.step_count += 1
+        n = cfg.num_robots
+        actions = np.asarray(actions).astype(int)
+
+        cur = [tuple(p) for p in self.positions]
+        targets = []
+        obstacle_hit = [False] * n
+        for i in range(n):
+            dx, dy = self._MOVES[int(actions[i]) if int(actions[i]) in self._MOVES else 4]
+            nx = int(np.clip(cur[i][0] + dx, 0, cfg.rows - 1))
+            ny = int(np.clip(cur[i][1] + dy, 0, cfg.cols - 1))
+            if self.grid_map[nx, ny] == OBSTACLE:
+                obstacle_hit[i] = True
+                targets.append(cur[i])           # reverted
+            else:
+                targets.append((nx, ny))
+
+        robot_collide = self._resolve_conflicts(cur, targets)
+
+        # commit moves, distances, map reveal
+        for i in range(n):
+            if targets[i] != cur[i]:
+                self.distances[i] += 1
+            self.positions[i] = targets[i]
+            self._reveal(self.positions[i])
+
+        # ---------------- reward (accumulative, Table III) -------------- #
+        rw = cfg.rewards
+        reward = 0.0
+        n_obs = int(np.sum(obstacle_hit))
+        n_rob = int(np.sum(robot_collide))
+        reward += n_obs * rw.collide_obstacle
+        reward += n_rob * rw.collide_robot
+
+        area, (min_x, min_y, side, _) = self._bounding_square()
+        terminated = False
+        if area <= cfg.threshold_area and self._square_free(min_x, min_y, side):
+            reward += rw.goal
+            terminated = True
+        elif area < self.best_area:
+            reward += rw.area_decrease
+        elif area > self.prev_area:
+            reward += rw.area_increase
+        self.best_area = min(self.best_area, area)
+        self.prev_area = area
+
+        truncated = (not terminated) and self.step_count >= cfg.max_steps
+
+        info = {
+            "bounding_area": area,
+            "best_area": self.best_area,
+            "obstacle_collisions": n_obs,
+            "robot_collisions": n_rob,
+            "distances": self.distances.copy(),
+            "total_distance": int(self.distances.sum()),
+            "max_distance": int(self.distances.max()),
+            "is_success": terminated,
+        }
+
+        if self.render_mode == "human":
+            self._render_frame()
+
+        return self._obs(), reward, terminated, truncated, info
+
+    # ------------------------------------------------------------------ #
+    # collision resolution                                               #
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _resolve_conflicts(cur: List[tuple], targets: List[tuple]) -> List[bool]:
+        """Iteratively revert conflicting moves. Mutates `targets` in place.
+
+        Detects: (a) two or more robots targeting the same cell,
+                 (b) swaps (i -> j's cell while j -> i's cell),
+                 (c) moving into a cell whose occupant stays (or was reverted).
+        Following a robot into the cell it vacates is allowed.
+        Reverts cascade until a fixpoint (reverting one robot can invalidate
+        another's move). Returns a per-robot collision flag.
+        """
+        n = len(cur)
+        collide = [False] * n
+        changed = True
+        while changed:
+            changed = False
+            # (a) same-target conflicts among moving robots
+            seen = {}
+            for i in range(n):
+                if targets[i] == cur[i]:
+                    continue
+                if targets[i] in seen:
+                    j = seen[targets[i]]
+                    for k in (i, j):
+                        if targets[k] != cur[k]:
+                            targets[k] = cur[k]
+                            collide[k] = True
+                            changed = True
+                else:
+                    seen[targets[i]] = i
+            # (b) swaps
+            for i in range(n):
+                if targets[i] == cur[i]:
+                    continue
+                for j in range(i + 1, n):
+                    if targets[j] == cur[j]:
+                        continue
+                    if targets[i] == cur[j] and targets[j] == cur[i]:
+                        targets[i], targets[j] = cur[i], cur[j]
+                        collide[i] = collide[j] = True
+                        changed = True
+            # (c) moving into a cell whose occupant is not leaving
+            stay_cells = {cur[i] for i in range(n) if targets[i] == cur[i]}
+            for i in range(n):
+                if targets[i] != cur[i] and targets[i] in stay_cells:
+                    targets[i] = cur[i]
+                    collide[i] = True
+                    changed = True
+        return collide
+
+    # ------------------------------------------------------------------ #
+    def _obs(self):
+        return {
+            "known_map": self.known_map.copy(),
+            "robot_positions": self.positions.copy(),
+        }
+
+    def _render_frame(self):
+        import pygame
+        cell = 24
+        R, C = self.cfg.rows, self.cfg.cols
+        if self._screen is None:
+            pygame.init()
+            self._screen = pygame.display.set_mode((C * cell, R * cell))
+        s = self._screen
+        s.fill((255, 255, 255))
+        for x in range(R):
+            for y in range(C):
+                rect = (y * cell, x * cell, cell, cell)
+                if self.known_map[x, y] == OBSTACLE:
+                    pygame.draw.rect(s, (0, 0, 0), rect)
+                elif self.known_map[x, y] == UNKNOWN:
+                    pygame.draw.rect(s, (220, 220, 220), rect)
+                pygame.draw.rect(s, (180, 180, 180), rect, 1)
+        for p in self.positions:
+            pygame.draw.rect(s, (200, 30, 30),
+                             (p[1] * cell, p[0] * cell, cell, cell))
+        _, (mx, my, side, _) = self._bounding_square()
+        pygame.draw.rect(s, (30, 160, 30),
+                         (my * cell, mx * cell, side * cell, side * cell), 2)
+        pygame.display.update()
+
+    def close(self):
+        if self._screen is not None:
+            import pygame
+            pygame.quit()
+            self._screen = None
+
+    # convenience for provenance sidecars
+    def config_dict(self):
+        return asdict(self.cfg)

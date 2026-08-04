@@ -1,0 +1,162 @@
+"""Train one PPO configuration of the canonical rendezvous env.
+
+Usage (single run):
+    python train_paper.py --n-robots 4 --map-size 20 --seed 0 --steps 1000000
+
+Produces under <logdir>/<tag>/N{n}_M{m}/seed{s}/:
+    config.json          full provenance (hyperparams, versions, GPU, wall clock)
+    model.zip            final model
+    best_model.zip       best checkpoint by deterministic eval success
+    checkpoints/         periodic snapshots
+    tb/                  TensorBoard logs
+    eval/                EvalCallback npz logs
+
+Hyperparameters default to the values stated in the manuscript:
+lr 9e-5, ent_coef 0.05, n_steps 2048, batch 64, gamma 0.99, GAE 0.95,
+clip 0.2, vf 0.5, max_grad_norm 0.5, MultiInputPolicy with 64-64 tanh heads.
+"""
+
+import argparse
+import json
+import platform
+import subprocess
+import time
+from pathlib import Path
+
+import numpy as np
+import torch
+
+from stable_baselines3 import PPO
+from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.utils import set_random_seed
+from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
+
+from env_paper import RendezvousEnv, EnvConfig, RewardConfig
+
+
+def make_env(cfg: EnvConfig, seed: int):
+    def _thunk():
+        env = RendezvousEnv(EnvConfig(**{**cfg.__dict__,
+                                         "rewards": RewardConfig(**cfg.rewards.__dict__)}),
+                            seed=seed)
+        return Monitor(env)
+    return _thunk
+
+
+def git_commit(cwd: Path):
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=cwd,
+            stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+        return None
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--n-robots", type=int, default=4)
+    p.add_argument("--map-size", type=int, default=20)
+    p.add_argument("--steps", type=int, default=1_000_000)
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--n-envs", type=int, default=8)
+    p.add_argument("--lr", type=float, default=9e-5)
+    p.add_argument("--ent-coef", type=float, default=0.05)
+    p.add_argument("--n-steps", type=int, default=2048)
+    p.add_argument("--batch-size", type=int, default=64)
+    p.add_argument("--max-steps", type=int, default=300)
+    p.add_argument("--threshold", type=int, default=16)
+    p.add_argument("--tag", type=str, default="primary")
+    p.add_argument("--logdir", type=str, default="runs_paper")
+    p.add_argument("--device", type=str, default="auto")
+    p.add_argument("--eval-episodes", type=int, default=10)
+    p.add_argument("--eval-freq", type=int, default=25_000,
+                   help="total env steps between deterministic evals")
+    args = p.parse_args()
+
+    here = Path(__file__).resolve().parent
+    run_dir = here / args.logdir / args.tag / \
+        f"N{args.n_robots}_M{args.map_size}" / f"seed{args.seed}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "checkpoints").mkdir(exist_ok=True)
+
+    set_random_seed(args.seed)
+
+    cfg = EnvConfig(num_robots=args.n_robots, rows=args.map_size,
+                    cols=args.map_size, threshold_area=args.threshold,
+                    max_steps=args.max_steps)
+
+    vec_cls = SubprocVecEnv if args.n_envs > 1 else DummyVecEnv
+    env = vec_cls([make_env(cfg, seed=args.seed * 1000 + i)
+                   for i in range(args.n_envs)])
+    # held-out eval env: seed stream far away from every training stream
+    eval_env = DummyVecEnv([make_env(cfg, seed=900_000 + args.seed)])
+
+    policy_kwargs = dict(net_arch=dict(pi=[64, 64], vf=[64, 64]),
+                         activation_fn=torch.nn.Tanh)
+
+    model = PPO("MultiInputPolicy", env,
+                learning_rate=args.lr,
+                n_steps=args.n_steps,
+                batch_size=args.batch_size,
+                n_epochs=10,
+                gamma=0.99,
+                gae_lambda=0.95,
+                clip_range=0.2,
+                ent_coef=args.ent_coef,
+                vf_coef=0.5,
+                max_grad_norm=0.5,
+                policy_kwargs=policy_kwargs,
+                tensorboard_log=str(run_dir / "tb"),
+                seed=args.seed,
+                device=args.device,
+                verbose=1)
+
+    callbacks = [
+        EvalCallback(eval_env,
+                     best_model_save_path=str(run_dir),
+                     log_path=str(run_dir / "eval"),
+                     eval_freq=max(args.eval_freq // args.n_envs, 1),
+                     n_eval_episodes=args.eval_episodes,
+                     deterministic=True, render=False),
+        CheckpointCallback(save_freq=max(100_000 // args.n_envs, 1),
+                           save_path=str(run_dir / "checkpoints"),
+                           name_prefix="ppo"),
+    ]
+
+    config = {
+        "script": "train_paper.py",
+        "argv": vars(args),
+        "env_config": {**cfg.__dict__, "rewards": cfg.rewards.__dict__},
+        "ppo": {"lr": args.lr, "n_steps": args.n_steps,
+                "batch_size": args.batch_size, "n_epochs": 10,
+                "gamma": 0.99, "gae_lambda": 0.95, "clip_range": 0.2,
+                "ent_coef": args.ent_coef, "vf_coef": 0.5,
+                "max_grad_norm": 0.5,
+                "net_arch": "pi[64,64] vf[64,64] tanh"},
+        "versions": {"python": platform.python_version(),
+                     "torch": torch.__version__,
+                     "cuda": torch.version.cuda,
+                     "gpu": torch.cuda.get_device_name(0)
+                            if torch.cuda.is_available() else None},
+        "hostname": platform.node(),
+        "git_commit": git_commit(here),
+        "started_unix": time.time(),
+    }
+    (run_dir / "config.json").write_text(json.dumps(config, indent=2))
+
+    t0 = time.time()
+    model.learn(total_timesteps=args.steps, callback=callbacks,
+                progress_bar=False)
+    config["wall_clock_sec"] = round(time.time() - t0, 2)
+    config["finished_unix"] = time.time()
+    (run_dir / "config.json").write_text(json.dumps(config, indent=2))
+
+    model.save(str(run_dir / "model.zip"))
+    env.close()
+    eval_env.close()
+    print(f"DONE {run_dir}  wall={config['wall_clock_sec']}s")
+
+
+if __name__ == "__main__":
+    main()

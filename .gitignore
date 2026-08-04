@@ -41,3 +41,7 @@ Thumbs.db
 *.pdf
 *.docx
 *.tex
+
+# paper_rev2 run artifacts
+runs_paper/
+paper_rev2/results/
