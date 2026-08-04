@@ -5,8 +5,10 @@ Usage (single run):
 
 Produces under <logdir>/<tag>/N{n}_M{m}/seed{s}/:
     config.json          full provenance (hyperparams, versions, GPU, wall clock)
-    model.zip            final model
-    best_model.zip       best checkpoint by deterministic eval success
+    model.zip            final model (written only when training completes --
+                         its absence marks a crashed/partial run)
+    best_model.zip       best checkpoint by mean deterministic-eval reward on
+                         a FIXED 10-map evaluation set (same maps every eval)
     checkpoints/         periodic snapshots
     tb/                  TensorBoard logs
     eval/                EvalCallback npz logs
@@ -32,7 +34,29 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 
+import gymnasium as gym
+
 from env_paper import RendezvousEnv, EnvConfig, RewardConfig
+
+# fixed seeds for the EvalCallback map set: every evaluation scores the
+# checkpoint on the SAME 10 maps, so best_model selection is comparable
+# across evaluations instead of a noisy argmax over fresh random maps
+EVAL_CB_SEEDS = [800_000 + k for k in range(10)]
+
+
+class FixedSeedCycler(gym.Wrapper):
+    """Cycles a fixed seed list across resets (ignores incoming seeds)."""
+
+    def __init__(self, env, seeds):
+        super().__init__(env)
+        self._seeds = list(seeds)
+        self._i = 0
+
+    def reset(self, **kwargs):
+        kwargs.pop("seed", None)
+        s = self._seeds[self._i % len(self._seeds)]
+        self._i += 1
+        return self.env.reset(seed=s, **kwargs)
 
 
 def make_env(cfg: EnvConfig, seed: int):
@@ -41,6 +65,14 @@ def make_env(cfg: EnvConfig, seed: int):
                                          "rewards": RewardConfig(**cfg.rewards.__dict__)}),
                             seed=seed)
         return Monitor(env)
+    return _thunk
+
+
+def make_eval_env(cfg: EnvConfig):
+    def _thunk():
+        env = RendezvousEnv(EnvConfig(**{**cfg.__dict__,
+                                         "rewards": RewardConfig(**cfg.rewards.__dict__)}))
+        return Monitor(FixedSeedCycler(env, EVAL_CB_SEEDS))
     return _thunk
 
 
@@ -89,8 +121,8 @@ def main():
     vec_cls = SubprocVecEnv if args.n_envs > 1 else DummyVecEnv
     env = vec_cls([make_env(cfg, seed=args.seed * 1000 + i)
                    for i in range(args.n_envs)])
-    # held-out eval env: seed stream far away from every training stream
-    eval_env = DummyVecEnv([make_env(cfg, seed=900_000 + args.seed)])
+    # fixed-map eval env for checkpoint selection (see FixedSeedCycler)
+    eval_env = DummyVecEnv([make_eval_env(cfg)])
 
     policy_kwargs = dict(net_arch=dict(pi=[64, 64], vf=[64, 64]),
                          activation_fn=torch.nn.Tanh)
@@ -111,6 +143,13 @@ def main():
                 seed=args.seed,
                 device=args.device,
                 verbose=1)
+
+    # SB3's PPO(seed=...) has just silently re-seeded every worker to
+    # args.seed + idx, which would make the 3 matrix seeds share most of
+    # their per-env map streams (seed0/env1 == seed1/env0 == ...).
+    # Re-seed the VecEnv with well-separated streams; these are applied at
+    # the first reset inside learn()'s _setup_learn.
+    env.seed(args.seed * 1000)
 
     callbacks = [
         EvalCallback(eval_env,

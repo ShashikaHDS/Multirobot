@@ -6,7 +6,9 @@ environment for all new training, evaluation, baseline, and sensitivity
 experiments, fixing the following defects of the legacy code:
 
   1. Collision penalties were dead code (reward assigned, then overwritten
-     by the area-shaping branch).  Here every reward term accumulates.
+     by the area-shaping branch).  Here collision penalties accumulate
+     with the area term every step.  (The goal reward replaces the +20
+     shaping bonus on the terminal step, exactly as in Algorithm 1.)
   2. The `valid_move` latch disabled robot-robot collision detection for
      all robots after the first conflict, and swap/pass-through conflicts
      were never detected.  Here conflicts are resolved with an iterative
@@ -45,6 +47,7 @@ area is a new best.  Algorithm 1 in the manuscript nests the goal check
 under the improvement branch; the revision should update that line.
 """
 
+import copy
 from dataclasses import dataclass, field, asdict
 from typing import Optional, Tuple, List
 
@@ -164,7 +167,9 @@ class RendezvousEnv(gym.Env):
                  render_mode: Optional[str] = None,
                  seed: Optional[int] = None):
         super().__init__()
-        self.cfg = config or EnvConfig()
+        # deep-copy: the env must never mutate a caller-owned (possibly
+        # shared) config object, e.g. when fixed_map overrides rows/cols
+        self.cfg = copy.deepcopy(config) if config is not None else EnvConfig()
         self.render_mode = render_mode
         self._fixed_map = None if fixed_map is None else np.array(fixed_map, dtype=np.int8)
         self._fixed_starts = None if fixed_starts is None else np.array(fixed_starts, dtype=np.int32)
@@ -172,8 +177,17 @@ class RendezvousEnv(gym.Env):
             r, c = self._fixed_map.shape
             self.cfg.rows, self.cfg.cols = r, c
         if self._fixed_starts is not None:
-            assert len(self._fixed_starts) == self.cfg.num_robots, \
-                "fixed_starts must have one row per robot"
+            fs = self._fixed_starts
+            if len(fs) != self.cfg.num_robots:
+                raise ValueError("fixed_starts must have one row per robot")
+            if len({tuple(p) for p in fs}) != len(fs):
+                raise ValueError("fixed_starts contains duplicate cells")
+            if (fs[:, 0].min() < 0 or fs[:, 0].max() >= self.cfg.rows
+                    or fs[:, 1].min() < 0 or fs[:, 1].max() >= self.cfg.cols):
+                raise ValueError("fixed_starts out of bounds")
+            if self._fixed_map is not None and \
+                    any(self._fixed_map[p[0], p[1]] == OBSTACLE for p in fs):
+                raise ValueError("fixed_starts placed on an obstacle cell")
 
         n, R, C = self.cfg.num_robots, self.cfg.rows, self.cfg.cols
         self.action_space = spaces.MultiDiscrete([5] * n)
@@ -183,8 +197,10 @@ class RendezvousEnv(gym.Env):
                                           shape=(n, 2), dtype=np.int32),
         })
 
-        self._np_random_seed = seed
         self.np_random, _ = gym.utils.seeding.np_random(seed)
+        # NOTE: assign after the np_random property setter, which clobbers
+        # gymnasium's internal seed record with -1
+        self._ctor_seed = seed
 
         self.grid_map: np.ndarray = np.zeros((R, C), dtype=np.int8)
         self.known_map: np.ndarray = np.full((R, C), UNKNOWN, dtype=np.int8)
@@ -228,6 +244,7 @@ class RendezvousEnv(gym.Env):
         super().reset(seed=seed)
         cfg = self.cfg
 
+        placed = False
         for _attempt in range(64):
             if self._fixed_map is not None:
                 self.grid_map = self._fixed_map.copy()
@@ -251,7 +268,17 @@ class RendezvousEnv(gym.Env):
             # don't start the episode already solved (legacy envs did, which
             # produced trivial 1-step successes in the stored revision data)
             if area > cfg.threshold_area or self._fixed_starts is not None:
+                placed = True
                 break
+        if not placed:
+            raise RuntimeError(
+                "reset(): could not place robots with bounding area > "
+                f"threshold ({cfg.threshold_area}) in 64 attempts -- "
+                "map too small/crowded for this configuration")
+        if self._fixed_starts is not None and self._fixed_map is None:
+            if any(self.grid_map[p[0], p[1]] == OBSTACLE for p in self.positions):
+                raise ValueError("fixed_starts collide with generated map "
+                                 "obstacles; supply fixed_map as well")
 
         self.known_map = np.full((cfg.rows, cfg.cols), UNKNOWN, dtype=np.int8)
         for p in self.positions:
@@ -389,6 +416,10 @@ class RendezvousEnv(gym.Env):
             "known_map": self.known_map.copy(),
             "robot_positions": self.positions.copy(),
         }
+
+    def render(self):
+        if self.render_mode == "human":
+            self._render_frame()
 
     def _render_frame(self):
         import pygame

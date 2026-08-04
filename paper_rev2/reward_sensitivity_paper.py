@@ -58,6 +58,9 @@ def train_one(param: str, level: float, seed: int, steps: int, n_envs: int):
                 policy_kwargs=dict(net_arch=dict(pi=[64, 64], vf=[64, 64]),
                                    activation_fn=torch.nn.Tanh),
                 seed=seed, verbose=0)
+    # undo SB3's silent env re-seed (PPO(seed=...) re-seeds workers to
+    # seed+idx); restore well-separated per-run streams
+    env.seed(seed * 1000)
     model.learn(total_timesteps=steps)
     env.close()
     return model

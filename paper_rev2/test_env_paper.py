@@ -204,6 +204,57 @@ def test_mapgen_connectivity():
     print("PASS mapgen_connectivity")
 
 
+def test_config_not_mutated():
+    # regression: constructing an env with a fixed_map of a different size
+    # must not write into the caller's (possibly shared) EnvConfig
+    shared = EnvConfig(num_robots=2, rows=20, cols=20)
+    small = np.zeros((6, 6), dtype=np.int8)
+    env_small = RendezvousEnv(shared, fixed_map=small,
+                              fixed_starts=np.array([[0, 0], [5, 5]]))
+    assert shared.rows == 20 and shared.cols == 20, "caller config mutated!"
+    env_big = RendezvousEnv(shared)
+    env_big.reset(seed=0)
+    assert env_big.grid_map.shape == (20, 20)
+    print("PASS config_not_mutated")
+
+
+def test_fixed_starts_validation():
+    grid = FREE5.copy()
+    grid[2, 2] = OBSTACLE
+    for bad in ([[1, 1], [1, 1]],          # duplicate
+                [[1, 1], [9, 9]],          # out of bounds (7x7 grid)
+                [[1, 1], [2, 2]]):         # on obstacle
+        try:
+            RendezvousEnv(EnvConfig(num_robots=2, rows=7, cols=7),
+                          fixed_map=grid, fixed_starts=np.array(bad))
+            raise AssertionError(f"fixed_starts {bad} accepted")
+        except ValueError:
+            pass
+    print("PASS fixed_starts_validation")
+
+
+def test_astar_baseline_sanity():
+    # exercises the stall-recovery + goal-validity fixes: across heuristics
+    # and 10 held-out maps the baseline must mostly succeed, and any failure
+    # must not be a frozen-fleet truncation (zero distance)
+    from astar_paper import run_astar_episode, HEURISTICS
+    env = RendezvousEnv(EnvConfig(num_robots=4))
+    results = []
+    for h in HEURISTICS:
+        for ep in range(10):
+            m = run_astar_episode(env, h, seed=10_000 + ep)
+            results.append((h, ep, m))
+            assert m["success"] or m["total_distance"] > 0, \
+                f"frozen-fleet stall: {h} ep{ep} -> {m}"
+    rate = np.mean([m["success"] for _, _, m in results])
+    per_h = {h: np.mean([m["success"] for hh, _, m in results if hh == h])
+             for h in HEURISTICS}
+    print(f"     A* success rates: {per_h} (overall {rate:.2f})")
+    assert rate >= 0.8, f"A* baseline too weak after fixes: {per_h}"
+    env.close()
+    print("PASS astar_baseline_sanity")
+
+
 def test_sb3_env_checker():
     try:
         from stable_baselines3.common.env_checker import check_env
@@ -230,5 +281,8 @@ if __name__ == "__main__":
     test_truncation()
     test_spawn_not_solved()
     test_mapgen_connectivity()
+    test_config_not_mutated()
+    test_fixed_starts_validation()
+    test_astar_baseline_sanity()
     test_sb3_env_checker()
     print("\nAll tests passed.")
