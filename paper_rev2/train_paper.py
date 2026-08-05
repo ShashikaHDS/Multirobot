@@ -133,6 +133,8 @@ def main():
     p.add_argument("--ent-final", type=float, default=None,
                    help="if set, linearly anneal ent_coef from --ent-coef "
                         "to this value over the whole run")
+    p.add_argument("--net-width", type=int, default=64,
+                   help="hidden width of the two policy/value MLP layers")
     p.add_argument("--step-cost", type=float, default=0.0,
                    help="per-step reward added every step (e.g. -0.1)")
     p.add_argument("--potential-coef", type=float, default=0.0,
@@ -161,7 +163,8 @@ def main():
     # fixed-map eval env for checkpoint selection (see FixedSeedCycler)
     eval_env = DummyVecEnv([make_eval_env(cfg)])
 
-    policy_kwargs = dict(net_arch=dict(pi=[64, 64], vf=[64, 64]),
+    w = args.net_width
+    policy_kwargs = dict(net_arch=dict(pi=[w, w], vf=[w, w]),
                          activation_fn=torch.nn.Tanh)
 
     if args.init_from:
@@ -224,7 +227,7 @@ def main():
                 "gamma": 0.99, "gae_lambda": 0.95, "clip_range": 0.2,
                 "ent_coef": args.ent_coef, "vf_coef": 0.5,
                 "max_grad_norm": 0.5,
-                "net_arch": "pi[64,64] vf[64,64] tanh"},
+                "net_arch": f"pi[{w},{w}] vf[{w},{w}] tanh"},
         "versions": {"python": platform.python_version(),
                      "torch": torch.__version__,
                      "cuda": torch.version.cuda,
