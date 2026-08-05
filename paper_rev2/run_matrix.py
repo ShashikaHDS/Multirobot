@@ -36,7 +36,25 @@ def main():
                    help="restrict to one config, e.g. N4_M20")
     p.add_argument("--eval-after", action="store_true",
                    help="run eval_paper.py when the matrix finishes")
+    # recipe pass-through to train_paper.py
+    p.add_argument("--lr", type=float, default=None)
+    p.add_argument("--ent-coef", type=float, default=None)
+    p.add_argument("--ent-final", type=float, default=None)
+    p.add_argument("--step-cost", type=float, default=None)
+    p.add_argument("--potential-coef", type=float, default=None)
+    p.add_argument("--net-width", type=int, default=None)
+    # eval pass-through
+    p.add_argument("--eval-out", type=str, default="results")
+    p.add_argument("--eval-stochastic", action="store_true")
+    p.add_argument("--eval-samples", type=int, default=5)
     args = p.parse_args()
+
+    recipe = []
+    for flag in ("lr", "ent_coef", "ent_final", "step_cost",
+                 "potential_coef", "net_width"):
+        v = getattr(args, flag)
+        if v is not None:
+            recipe += ["--" + flag.replace("_", "-"), str(v)]
 
     t0 = time.time()
     for (n, m, steps) in MATRIX:
@@ -54,16 +72,19 @@ def main():
                    "--n-robots", str(n), "--map-size", str(m),
                    "--steps", str(steps), "--seed", str(seed),
                    "--n-envs", str(args.n_envs),
-                   "--tag", args.tag, "--logdir", args.logdir]
+                   "--tag", args.tag, "--logdir", args.logdir] + recipe
             rc = subprocess.call(cmd, cwd=str(HERE))
             if rc != 0:
                 print(f"!! {name} seed{seed} exited {rc}; continuing")
 
     print(f"matrix done in {round((time.time()-t0)/3600, 2)} h")
     if args.eval_after:
-        subprocess.call([sys.executable, str(HERE / "eval_paper.py"),
-                        "--tag", args.tag, "--logdir", args.logdir],
-                        cwd=str(HERE))
+        ev = [sys.executable, str(HERE / "eval_paper.py"),
+              "--tag", args.tag, "--logdir", args.logdir,
+              "--out", args.eval_out]
+        if args.eval_stochastic:
+            ev += ["--stochastic", "--samples", str(args.eval_samples)]
+        subprocess.call(ev, cwd=str(HERE))
 
 
 if __name__ == "__main__":

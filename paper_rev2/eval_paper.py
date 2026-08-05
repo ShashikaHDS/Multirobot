@@ -43,21 +43,46 @@ from astar_paper import run_astar_episode, HEURISTICS
 EVAL_SEED_BASE = 10_000
 
 
-def rollout_ppo(model, env: RendezvousEnv, seed: int):
-    obs, _ = env.reset(seed=seed)
-    terminated = truncated = False
-    info = {}
+def rollout_ppo(model, env: RendezvousEnv, seed: int,
+                deterministic: bool = True, samples: int = 1):
+    """One (deterministic) or K seeded stochastic rollouts on one map.
+
+    Stochastic protocol: actions are sampled from the learned categorical
+    policy; each rollout's torch RNG is seeded from (map seed, sample
+    index) so results are exactly reproducible.  Failed rollouts count
+    steps/distance at the truncation cap (censored means -- no survivor
+    bias).  `success` is the fraction of rollouts that reached the goal.
+    Rationale: the env is deterministic, so a memoryless deterministic
+    policy that revisits a joint state livelocks until truncation
+    (verified: 19/19 deterministic failures were exact position cycles);
+    stochastic execution is the symmetry-breaking mechanism.
+    """
+    import torch
+    succ, steps, td, md = [], [], [], []
     t0 = time.perf_counter()
-    while not (terminated or truncated):
-        action, _ = model.predict(obs, deterministic=True)
-        obs, r, terminated, truncated, info = env.step(action)
+    n_steps_total = 0
+    for k in range(samples):
+        if not deterministic:
+            torch.manual_seed((seed * 1000 + k) % (2 ** 31))
+        obs, _ = env.reset(seed=seed)
+        terminated = truncated = False
+        info = {}
+        while not (terminated or truncated):
+            action, _ = model.predict(obs, deterministic=deterministic)
+            obs, r, terminated, truncated, info = env.step(action)
+        n_steps_total += env.step_count
+        succ.append(bool(info.get("is_success", False)))
+        steps.append(env.step_count)
+        td.append(info.get("total_distance", 0))
+        md.append(info.get("max_distance", 0))
     wall = time.perf_counter() - t0
+    import numpy as _np
     return {
-        "success": bool(info.get("is_success", False)),
-        "steps": env.step_count,
-        "total_distance": info.get("total_distance", 0),
-        "max_distance": info.get("max_distance", 0),
-        "wall_ms_per_step": 1000.0 * wall / max(env.step_count, 1),
+        "success": float(_np.mean(succ)),
+        "steps": float(_np.mean(steps)),
+        "total_distance": float(_np.mean(td)),
+        "max_distance": float(_np.mean(md)),
+        "wall_ms_per_step": 1000.0 * wall / max(n_steps_total, 1),
     }
 
 
@@ -101,6 +126,12 @@ def main():
     p.add_argument("--logdir", type=str, default="runs_paper")
     p.add_argument("--episodes", type=int, default=20)
     p.add_argument("--out", type=str, default="results")
+    p.add_argument("--stochastic", action="store_true",
+                   help="sample actions from the policy (seeded) instead "
+                        "of argmax")
+    p.add_argument("--samples", type=int, default=5,
+                   help="stochastic rollouts per map (ignored when "
+                        "deterministic)")
     args = p.parse_args()
 
     here = Path(__file__).resolve().parent
@@ -123,7 +154,9 @@ def main():
         model = PPO.load(str(run["model"]), device="cpu")
         for ep in range(args.episodes):
             seed = EVAL_SEED_BASE + ep
-            met = rollout_ppo(model, env, seed)
+            met = rollout_ppo(model, env, seed,
+                              deterministic=not args.stochastic,
+                              samples=args.samples if args.stochastic else 1)
             rows.append({"method": "ppo", "heuristic": "",
                          "n": run["n"], "m": run["m"],
                          "train_seed": run["seed"], "episode": ep, **met})
@@ -180,7 +213,7 @@ def main():
             sel = [r for r in ppo if r["episode"] == ep]
             per_map[ep] = {
                 "success": float(np.mean([r["success"] for r in sel])),
-                "all_succeed": all(r["success"] for r in sel),
+                "all_succeed": all(r["success"] >= 0.999 for r in sel),
                 "steps": float(np.mean([r["steps"] for r in sel])),
                 "total_distance": float(np.mean([r["total_distance"] for r in sel])),
                 "max_distance": float(np.mean([r["max_distance"] for r in sel]))}
@@ -213,10 +246,13 @@ def main():
                        if r["method"] == "astar" and r["heuristic"] == h
                        and r["n"] == n and r["m"] == m}
         for metric in ("steps", "total_distance"):
+            # PPO per-map values are censored means over all rollouts
+            # (failures at the truncation cap), so no survivor bias; the
+            # only gate is that A* succeeded on the map.
             pairs = []
             for ep, pv in ppo_per_map[(n, m)].items():
                 av = astar_by_ep.get(ep)
-                if av and pv["all_succeed"] and av["success"]:
+                if av and av["success"]:
                     pairs.append((pv[metric], float(av[metric])))
             if len(pairs) >= 5:
                 x = np.array([a for a, _ in pairs])
@@ -257,7 +293,9 @@ def main():
                 a = astar_by_ep.get(r["episode"])
                 if a is None:
                     continue
-                ps, as_ = bool(r["success"]), bool(a["success"])
+                # stochastic protocol: a map counts as PPO-success for the
+                # McNemar table when the majority of rollouts succeeded
+                ps, as_ = r["success"] >= 0.5, bool(a["success"])
                 both += ps and as_
                 neither += (not ps) and (not as_)
                 n01 += ps and not as_
@@ -275,6 +313,8 @@ def main():
 
     (out_dir / "eval_meta.json").write_text(json.dumps(
         {"episodes": args.episodes, "eval_seed_base": EVAL_SEED_BASE,
+         "protocol": ("stochastic" if args.stochastic else "deterministic"),
+         "samples_per_map": args.samples if args.stochastic else 1,
          "skipped_incomplete_runs": skipped,
          "best_heuristic_per_config":
              {f"N{n}_M{m}": best_h[(n, m)] for (n, m) in configs},
