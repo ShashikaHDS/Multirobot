@@ -60,12 +60,25 @@ UNKNOWN, FREE, OBSTACLE = -1, 0, 1
 
 @dataclass
 class RewardConfig:
-    """Table III values. Sensitivity analysis perturbs these one at a time."""
+    """Table III values. Sensitivity analysis perturbs these one at a time.
+
+    step_cost: added every step (0 disables). A small negative value makes
+    dawdling costly so the learned policy is decisive rather than a
+    high-entropy drift (the original Table III had no urgency term, which
+    empirically produced near-uniform policies whose argmax fails).
+
+    potential_coef: if nonzero, the area shaping term becomes true
+    potential-based shaping  r_shape = potential_coef * (prev_area -
+    new_area)  applied every step with both signs (Ng et al.), replacing
+    the {area_decrease on new best / area_increase on growth} scheme.
+    """
     area_decrease: float = 20.0
     area_increase: float = -0.5
     collide_obstacle: float = -5.0
     collide_robot: float = -5.0
     goal: float = 100.0
+    step_cost: float = 0.0
+    potential_coef: float = 0.0
 
 
 @dataclass
@@ -329,13 +342,17 @@ class RendezvousEnv(gym.Env):
 
         area, (min_x, min_y, side, _) = self._bounding_square()
         terminated = False
+        reward += rw.step_cost
         if area <= cfg.threshold_area and self._square_free(min_x, min_y, side):
             reward += rw.goal
             terminated = True
-        elif area < self.best_area:
-            reward += rw.area_decrease
-        elif area > self.prev_area:
-            reward += rw.area_increase
+        if rw.potential_coef != 0.0:
+            reward += rw.potential_coef * (self.prev_area - area)
+        elif not terminated:
+            if area < self.best_area:
+                reward += rw.area_decrease
+            elif area > self.prev_area:
+                reward += rw.area_increase
         self.best_area = min(self.best_area, area)
         self.prev_area = area
 

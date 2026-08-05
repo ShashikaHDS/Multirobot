@@ -29,7 +29,9 @@ import numpy as np
 import torch
 
 from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
+from stable_baselines3.common.callbacks import (BaseCallback,
+                                                CheckpointCallback,
+                                                EvalCallback)
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
@@ -42,6 +44,27 @@ from env_paper import RendezvousEnv, EnvConfig, RewardConfig
 # checkpoint on the SAME 10 maps, so best_model selection is comparable
 # across evaluations instead of a noisy argmax over fresh random maps
 EVAL_CB_SEEDS = [800_000 + k for k in range(10)]
+
+
+class EntCoefSchedule(BaseCallback):
+    """Linearly interpolate model.ent_coef from start to end over training.
+
+    PPO reads self.ent_coef at every update, so mutating it between
+    rollouts implements an entropy schedule (SB3 has no native one).
+    High entropy early buys exploration; ~0 late sharpens the policy so
+    its argmax matches its behaviour.
+    """
+
+    def __init__(self, start: float, end: float, total_steps: int):
+        super().__init__()
+        self.start, self.end, self.total = start, end, total_steps
+
+    def _on_step(self) -> bool:
+        return True
+
+    def _on_rollout_end(self) -> None:
+        frac = min(1.0, self.num_timesteps / self.total)
+        self.model.ent_coef = self.start + frac * (self.end - self.start)
 
 
 class FixedSeedCycler(gym.Wrapper):
@@ -107,6 +130,15 @@ def main():
     p.add_argument("--init-from", type=str, default=None,
                    help="path to a model.zip to continue training from "
                         "(used for the low-entropy fine-tune stage)")
+    p.add_argument("--ent-final", type=float, default=None,
+                   help="if set, linearly anneal ent_coef from --ent-coef "
+                        "to this value over the whole run")
+    p.add_argument("--step-cost", type=float, default=0.0,
+                   help="per-step reward added every step (e.g. -0.1)")
+    p.add_argument("--potential-coef", type=float, default=0.0,
+                   help="if nonzero, use potential-based area shaping "
+                        "coef*(prev_area-new_area) instead of the "
+                        "new-best/increase scheme")
     args = p.parse_args()
 
     here = Path(__file__).resolve().parent
@@ -119,7 +151,9 @@ def main():
 
     cfg = EnvConfig(num_robots=args.n_robots, rows=args.map_size,
                     cols=args.map_size, threshold_area=args.threshold,
-                    max_steps=args.max_steps)
+                    max_steps=args.max_steps,
+                    rewards=RewardConfig(step_cost=args.step_cost,
+                                         potential_coef=args.potential_coef))
 
     vec_cls = SubprocVecEnv if args.n_envs > 1 else DummyVecEnv
     env = vec_cls([make_env(cfg, seed=args.seed * 1000 + i)
@@ -165,7 +199,11 @@ def main():
     # primary run's curriculum.
     env.seed(args.seed * 1000 + (500 if args.init_from else 0))
 
-    callbacks = [
+    callbacks = []
+    if args.ent_final is not None:
+        callbacks.append(EntCoefSchedule(args.ent_coef, args.ent_final,
+                                         args.steps))
+    callbacks += [
         EvalCallback(eval_env,
                      best_model_save_path=str(run_dir),
                      log_path=str(run_dir / "eval"),
