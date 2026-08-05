@@ -1,0 +1,15 @@
+{
+  "episodes": 20,
+  "eval_seed_base": 10000,
+  "skipped_incomplete_runs": [
+    "D:\\RL\\Teal_rl\\RL\\RL_V2.0\\paper_rev2\\runs_paper\\primary\\N5_M25\\seed2"
+  ],
+  "best_heuristic_per_config": {
+    "N2_M20": "bbox",
+    "N3_M20": "median",
+    "N4_M20": "bbox",
+    "N5_M20": "median",
+    "N5_M25": "median"
+  },
+  "timestamp": 1785889696.9492
+}

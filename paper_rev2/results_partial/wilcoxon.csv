@@ -1,0 +1,11 @@
+config,vs,metric,n_pairs,ppo_mean,astar_mean,wilcoxon_stat,p_value
+N2_M20,astar_bbox,steps,5,3.6666666666666665,3.2,2.0,0.27332167829229814
+N2_M20,astar_bbox,total_distance,5,6.333333333333333,6.4,3.0,1.0
+N3_M20,astar_median,steps,2,,,,
+N3_M20,astar_median,total_distance,2,,,,
+N4_M20,astar_bbox,steps,0,,,,
+N4_M20,astar_bbox,total_distance,0,,,,
+N5_M20,astar_median,steps,0,,,,
+N5_M20,astar_median,total_distance,0,,,,
+N5_M25,astar_median,steps,0,,,,
+N5_M25,astar_median,total_distance,0,,,,

@@ -104,6 +104,9 @@ def main():
     p.add_argument("--eval-episodes", type=int, default=10)
     p.add_argument("--eval-freq", type=int, default=25_000,
                    help="total env steps between deterministic evals")
+    p.add_argument("--init-from", type=str, default=None,
+                   help="path to a model.zip to continue training from "
+                        "(used for the low-entropy fine-tune stage)")
     args = p.parse_args()
 
     here = Path(__file__).resolve().parent
@@ -127,29 +130,40 @@ def main():
     policy_kwargs = dict(net_arch=dict(pi=[64, 64], vf=[64, 64]),
                          activation_fn=torch.nn.Tanh)
 
-    model = PPO("MultiInputPolicy", env,
-                learning_rate=args.lr,
-                n_steps=args.n_steps,
-                batch_size=args.batch_size,
-                n_epochs=10,
-                gamma=0.99,
-                gae_lambda=0.95,
-                clip_range=0.2,
-                ent_coef=args.ent_coef,
-                vf_coef=0.5,
-                max_grad_norm=0.5,
-                policy_kwargs=policy_kwargs,
-                tensorboard_log=str(run_dir / "tb"),
-                seed=args.seed,
-                device=args.device,
-                verbose=1)
+    if args.init_from:
+        model = PPO.load(args.init_from, env=env,
+                         learning_rate=args.lr,
+                         ent_coef=args.ent_coef,
+                         tensorboard_log=str(run_dir / "tb"),
+                         seed=args.seed,
+                         device=args.device,
+                         verbose=1)
+    else:
+        model = PPO("MultiInputPolicy", env,
+                    learning_rate=args.lr,
+                    n_steps=args.n_steps,
+                    batch_size=args.batch_size,
+                    n_epochs=10,
+                    gamma=0.99,
+                    gae_lambda=0.95,
+                    clip_range=0.2,
+                    ent_coef=args.ent_coef,
+                    vf_coef=0.5,
+                    max_grad_norm=0.5,
+                    policy_kwargs=policy_kwargs,
+                    tensorboard_log=str(run_dir / "tb"),
+                    seed=args.seed,
+                    device=args.device,
+                    verbose=1)
 
     # SB3's PPO(seed=...) has just silently re-seeded every worker to
     # args.seed + idx, which would make the 3 matrix seeds share most of
     # their per-env map streams (seed0/env1 == seed1/env0 == ...).
     # Re-seed the VecEnv with well-separated streams; these are applied at
-    # the first reset inside learn()'s _setup_learn.
-    env.seed(args.seed * 1000)
+    # the first reset inside learn()'s _setup_learn.  Fine-tune runs get a
+    # +500 offset so they see fresh maps rather than replaying the
+    # primary run's curriculum.
+    env.seed(args.seed * 1000 + (500 if args.init_from else 0))
 
     callbacks = [
         EvalCallback(eval_env,
@@ -180,6 +194,7 @@ def main():
                             if torch.cuda.is_available() else None},
         "hostname": platform.node(),
         "git_commit": git_commit(here),
+        "init_from": args.init_from,
         "started_unix": time.time(),
     }
     (run_dir / "config.json").write_text(json.dumps(config, indent=2))

@@ -62,7 +62,14 @@ def rollout_ppo(model, env: RendezvousEnv, seed: int):
 
 
 def discover_runs(base: Path, tag: str):
-    """Completed runs only: model.zip is written after learn() finishes."""
+    """Completed runs only: model.zip is written after learn() finishes.
+
+    We deliberately evaluate the FINAL model, not best_model.zip: SB3's
+    EvalCallback selects by mean shaped reward, and empirically the
+    reward-argmax checkpoint exploits the shaping terms without reaching
+    the goal (0% success while the final model reaches far higher) --
+    reward-based checkpoint selection is adversarial under this reward.
+    """
     runs, skipped = [], []
     for cfg_dir in sorted((base / tag).glob("N*_M*")):
         for seed_dir in sorted(cfg_dir.glob("seed*")):
@@ -71,11 +78,10 @@ def discover_runs(base: Path, tag: str):
             if not final.exists() or not cfg_json.exists():
                 skipped.append(str(seed_dir))
                 continue
-            best = seed_dir / "best_model.zip"
             n = int(cfg_dir.name.split("_")[0][1:])
             m = int(cfg_dir.name.split("_")[1][1:])
             runs.append({"n": n, "m": m, "seed": int(seed_dir.name[4:]),
-                         "model": best if best.exists() else final,
+                         "model": final,
                          "config": json.loads(cfg_json.read_text())})
     return runs, skipped
 
