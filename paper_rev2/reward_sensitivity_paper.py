@@ -1,14 +1,26 @@
-"""One-at-a-time reward sensitivity analysis on the canonical env.
+"""One-at-a-time reward sensitivity analysis on the FINAL recipe,
+for N in {3, 4, 5} robots (paper Test case 06 + reviewer request).
 
-Exactly the protocol stated in the manuscript (Section IV, Test case 06):
-4 reward parameters x 5 perturbation levels, each trained for --steps
-(default 50k) with all other parameters at their Table III defaults,
-evaluated on a fixed held-out set with the *unperturbed* reward metrics.
+Base configuration (the paper's final reward/training recipe):
+    potential shaping 0.5 * dArea, step cost -0.1, goal +100,
+    collisions -5 each; ent_coef annealed 0.05 -> 0; lr 3e-4;
+    64-64 tanh MultiInputPolicy; 20x20 map.
 
-    python reward_sensitivity_paper.py --steps 50000 --seeds 0 1 2
+Sweep: 4 parameters x 5 levels x 3 robot counts (the base point is
+trained once per N and reused across parameters):
+    potential_coef   0.1  0.25  [0.5]  1.0  2.0
+    step_cost       -0.5  -0.2  [-0.1] -0.05 0.0
+    collide_obstacle -20  -10   [-5]   -1    0
+    collide_robot    -20  -10   [-5]   -1    0
 
-Writes reward_sensitivity.csv incrementally (safe to interrupt/resume:
-existing (param, level, seed) rows are skipped).
+Each point trains --steps (default 200k) with seed 0 and is evaluated
+with the paper protocol: 5 seeded stochastic rollouts on each of the 20
+held-out maps (censored means). Metrics: success rate, steps, total /
+max distance, Jain fairness. Incremental CSV -> safe to interrupt and
+resume (existing (param, level, n) rows are skipped).
+
+    python reward_sensitivity_paper.py            # full sweep (~5 h)
+    python plot_sensitivity.py                    # figure from the CSV
 """
 
 import argparse
@@ -21,120 +33,146 @@ import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 
 from env_paper import RendezvousEnv, EnvConfig, RewardConfig
+from train_paper import EntCoefSchedule
+
+BASE = dict(potential_coef=0.5, step_cost=-0.1,
+            collide_obstacle=-5.0, collide_robot=-5.0, goal=100.0)
 
 SWEEP = {
-    "area_decrease":   [5.0, 10.0, 20.0, 40.0, 80.0],
-    "area_increase":   [-2.0, -1.0, -0.5, -0.1, 0.0],
+    "potential_coef":   [0.1, 0.25, 0.5, 1.0, 2.0],
+    "step_cost":        [-0.5, -0.2, -0.1, -0.05, 0.0],
     "collide_obstacle": [-20.0, -10.0, -5.0, -1.0, 0.0],
     "collide_robot":    [-20.0, -10.0, -5.0, -1.0, 0.0],
 }
 
-N_ROBOTS = 4
 MAP = 20
-EVAL_EPISODES = 20
-EVAL_SEED_BASE = 42_000
+EVAL_MAPS = 20
+EVAL_SAMPLES = 5
+EVAL_SEED_BASE = 10_000
+LR = 3e-4
+ENT0, ENT1 = 0.05, 0.0
 
 
-def train_one(param: str, level: float, seed: int, steps: int, n_envs: int):
-    rewards = RewardConfig()
-    setattr(rewards, param, level)
-    cfg = EnvConfig(num_robots=N_ROBOTS, rows=MAP, cols=MAP, rewards=rewards)
+def make_rewards(param, level):
+    vals = dict(BASE)
+    vals[param] = level
+    return RewardConfig(**vals)
 
+
+def train_one(n_robots, rewards, steps, seed, n_envs):
+    cfg = EnvConfig(num_robots=n_robots, rows=MAP, cols=MAP, rewards=rewards)
     set_random_seed(seed)
-    env = DummyVecEnv([
-        (lambda i=i: Monitor(RendezvousEnv(
-            EnvConfig(num_robots=N_ROBOTS, rows=MAP, cols=MAP,
-                      rewards=RewardConfig(**rewards.__dict__)),
-            seed=seed * 1000 + i)))
-        for i in range(n_envs)])
 
+    def thunk(i):
+        return lambda: Monitor(RendezvousEnv(
+            EnvConfig(num_robots=n_robots, rows=MAP, cols=MAP,
+                      rewards=RewardConfig(**rewards.__dict__)),
+            seed=seed * 1000 + i))
+
+    vec_cls = SubprocVecEnv if n_envs > 1 else DummyVecEnv
+    env = vec_cls([thunk(i) for i in range(n_envs)])
     model = PPO("MultiInputPolicy", env,
-                learning_rate=9e-5, n_steps=2048, batch_size=64,
-                n_epochs=10, gamma=0.99, gae_lambda=0.95, clip_range=0.2,
-                ent_coef=0.05, vf_coef=0.5, max_grad_norm=0.5,
+                learning_rate=LR, n_steps=2048, batch_size=64, n_epochs=10,
+                gamma=0.99, gae_lambda=0.95, clip_range=0.2,
+                ent_coef=ENT0, vf_coef=0.5, max_grad_norm=0.5,
                 policy_kwargs=dict(net_arch=dict(pi=[64, 64], vf=[64, 64]),
                                    activation_fn=torch.nn.Tanh),
                 seed=seed, verbose=0)
-    # undo SB3's silent env re-seed (PPO(seed=...) re-seeds workers to
-    # seed+idx); restore well-separated per-run streams
-    env.seed(seed * 1000)
-    model.learn(total_timesteps=steps)
+    env.seed(seed * 1000)          # undo SB3's silent env re-seed
+    model.learn(total_timesteps=steps,
+                callback=EntCoefSchedule(ENT0, ENT1, steps))
     env.close()
     return model
 
 
-def evaluate(model):
-    """Deterministic rollouts on held-out maps, default reward env."""
-    env = RendezvousEnv(EnvConfig(num_robots=N_ROBOTS, rows=MAP, cols=MAP))
-    succ, steps, dist, obs_c, rob_c = [], [], [], [], []
-    for ep in range(EVAL_EPISODES):
-        obs, _ = env.reset(seed=EVAL_SEED_BASE + ep)
-        terminated = truncated = False
-        oc = rc = 0
-        info = {}
-        while not (terminated or truncated):
-            action, _ = model.predict(obs, deterministic=True)
-            obs, r, terminated, truncated, info = env.step(action)
-            oc += info["obstacle_collisions"]
-            rc += info["robot_collisions"]
-        succ.append(bool(info.get("is_success", False)))
-        steps.append(env.step_count)
-        dist.append(info.get("total_distance", 0))
-        obs_c.append(oc)
-        rob_c.append(rc)
+def evaluate(model, n_robots):
+    env = RendezvousEnv(EnvConfig(num_robots=n_robots, rows=MAP, cols=MAP))
+    succ, st, td, md, jn = [], [], [], [], []
+    for s in range(EVAL_SEED_BASE, EVAL_SEED_BASE + EVAL_MAPS):
+        for k in range(EVAL_SAMPLES):
+            torch.manual_seed((s * 1000 + k) % (2 ** 31))
+            obs, _ = env.reset(seed=s)
+            term = trunc = False
+            info = {}
+            while not (term or trunc):
+                a, _ = model.predict(obs, deterministic=False)
+                obs, r, term, trunc, info = env.step(a)
+            succ.append(bool(info.get("is_success")))
+            st.append(env.step_count)
+            td.append(info["total_distance"])
+            md.append(info["max_distance"])
+            d = env.distances.astype(float)
+            jn.append((d.sum() ** 2) / (len(d) * (d ** 2).sum())
+                      if d.sum() > 0 else 1.0)
     env.close()
     return {"success_rate": float(np.mean(succ)),
-            "steps_mean": float(np.mean(steps)),
-            "total_dist_mean": float(np.mean(dist)),
-            "obstacle_collisions_mean": float(np.mean(obs_c)),
-            "robot_collisions_mean": float(np.mean(rob_c))}
+            "steps_mean": float(np.mean(st)),
+            "total_dist_mean": float(np.mean(td)),
+            "max_dist_mean": float(np.mean(md)),
+            "jain_mean": float(np.mean(jn))}
 
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--steps", type=int, default=50_000)
-    p.add_argument("--seeds", type=int, nargs="+", default=[0])
+    p.add_argument("--steps", type=int, default=200_000)
+    p.add_argument("--seed", type=int, default=0)
     p.add_argument("--n-envs", type=int, default=8)
+    p.add_argument("--robots", type=int, nargs="+", default=[4, 3, 5])
     p.add_argument("--out", type=str, default="results/reward_sensitivity.csv")
     args = p.parse_args()
 
     out = Path(__file__).resolve().parent / args.out
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    fields = ["param", "level", "seed", "steps", "success_rate", "steps_mean",
-              "total_dist_mean", "obstacle_collisions_mean",
-              "robot_collisions_mean"]
+    fields = ["param", "level", "n_robots", "seed", "steps", "success_rate",
+              "steps_mean", "total_dist_mean", "max_dist_mean", "jain_mean"]
     done = set()
     if out.exists():
         with open(out) as f:
             for row in csv.DictReader(f):
-                done.add((row["param"], float(row["level"]), int(row["seed"])))
+                done.add((row["param"], float(row["level"]),
+                          int(row["n_robots"])))
     else:
         with open(out, "w", newline="") as f:
             csv.DictWriter(f, fieldnames=fields).writeheader()
 
-    total = sum(len(v) for v in SWEEP.values()) * len(args.seeds)
+    def write(param, level, n, met):
+        with open(out, "a", newline="") as f:
+            csv.DictWriter(f, fieldnames=fields).writerow(
+                {"param": param, "level": level, "n_robots": n,
+                 "seed": args.seed, "steps": args.steps, **met})
+
+    total = sum(len(v) for v in SWEEP.values()) * len(args.robots)
     i = 0
-    for param, levels in SWEEP.items():
-        for level in levels:
-            for seed in args.seeds:
+    default_cache = {}          # n -> metrics of the all-default point
+    for n in args.robots:
+        for param, levels in SWEEP.items():
+            for level in levels:
                 i += 1
-                if (param, level, seed) in done:
-                    print(f"[{i}/{total}] skip {param}={level} seed{seed}")
+                if (param, level, n) in done:
+                    print(f"[{i}/{total}] skip {param}={level} N{n}",
+                          flush=True)
                     continue
-                print(f"[{i}/{total}] train {param}={level} seed{seed} "
-                      f"({args.steps} steps)")
-                model = train_one(param, level, seed, args.steps, args.n_envs)
-                met = evaluate(model)
-                with open(out, "a", newline="") as f:
-                    csv.DictWriter(f, fieldnames=fields).writerow(
-                        {"param": param, "level": level, "seed": seed,
-                         "steps": args.steps, **met})
-                print(f"          success={met['success_rate']:.2f}")
-    print(f"done -> {out}")
+                is_default = (level == BASE[param])
+                if is_default and n in default_cache:
+                    write(param, level, n, default_cache[n])
+                    print(f"[{i}/{total}] reuse default N{n} for {param}",
+                          flush=True)
+                    continue
+                print(f"[{i}/{total}] train {param}={level} N{n} "
+                      f"({args.steps} steps)", flush=True)
+                model = train_one(n, make_rewards(param, level),
+                                  args.steps, args.seed, args.n_envs)
+                met = evaluate(model, n)
+                if is_default:
+                    default_cache[n] = met
+                write(param, level, n, met)
+                print(f"          success={met['success_rate']:.2f} "
+                      f"dist={met['total_dist_mean']:.0f}", flush=True)
+    print(f"SENSITIVITY_SWEEP_DONE -> {out}")
 
 
 if __name__ == "__main__":
