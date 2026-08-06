@@ -141,6 +141,9 @@ def main():
                    help="if nonzero, use potential-based area shaping "
                         "coef*(prev_area-new_area) instead of the "
                         "new-best/increase scheme")
+    p.add_argument("--move-cost", type=float, default=0.0,
+                   help="per-robot per-realized-move reward (energy term, "
+                        "e.g. -0.05)")
     args = p.parse_args()
 
     here = Path(__file__).resolve().parent
@@ -155,7 +158,8 @@ def main():
                     cols=args.map_size, threshold_area=args.threshold,
                     max_steps=args.max_steps,
                     rewards=RewardConfig(step_cost=args.step_cost,
-                                         potential_coef=args.potential_coef))
+                                         potential_coef=args.potential_coef,
+                                         move_cost=args.move_cost))
 
     vec_cls = SubprocVecEnv if args.n_envs > 1 else DummyVecEnv
     env = vec_cls([make_env(cfg, seed=args.seed * 1000 + i)

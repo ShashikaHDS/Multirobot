@@ -79,6 +79,7 @@ class RewardConfig:
     goal: float = 100.0
     step_cost: float = 0.0
     potential_coef: float = 0.0
+    move_cost: float = 0.0        # per robot per realized move (energy term)
 
 
 @dataclass
@@ -343,6 +344,9 @@ class RendezvousEnv(gym.Env):
         area, (min_x, min_y, side, _) = self._bounding_square()
         terminated = False
         reward += rw.step_cost
+        if rw.move_cost != 0.0:
+            n_moves = sum(1 for i in range(n) if targets[i] != cur[i])
+            reward += rw.move_cost * n_moves
         if area <= cfg.threshold_area and self._square_free(min_x, min_y, side):
             reward += rw.goal
             terminated = True

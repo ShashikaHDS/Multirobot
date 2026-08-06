@@ -252,9 +252,12 @@ def run_astar_episode(env: RendezvousEnv, heuristic: str,
             stall = 0
         last_positions = new_pos.copy()
 
+    d = env.distances.astype(float)
+    jain = float((d.sum() ** 2) / (len(d) * (d ** 2).sum())) if d.sum() > 0 else 1.0
     return {
         "success": bool(info.get("is_success", False)),
         "steps": env.step_count,
         "total_distance": info.get("total_distance", int(env.distances.sum())),
         "max_distance": info.get("max_distance", int(env.distances.max())),
+        "jain": jain,
     }

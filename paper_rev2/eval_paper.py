@@ -58,7 +58,7 @@ def rollout_ppo(model, env: RendezvousEnv, seed: int,
     stochastic execution is the symmetry-breaking mechanism.
     """
     import torch
-    succ, steps, td, md = [], [], [], []
+    succ, steps, td, md, jn = [], [], [], [], []
     t0 = time.perf_counter()
     n_steps_total = 0
     for k in range(samples):
@@ -75,6 +75,9 @@ def rollout_ppo(model, env: RendezvousEnv, seed: int,
         steps.append(env.step_count)
         td.append(info.get("total_distance", 0))
         md.append(info.get("max_distance", 0))
+        d = env.distances.astype(float)
+        jn.append(float((d.sum() ** 2) / (len(d) * (d ** 2).sum()))
+                  if d.sum() > 0 else 1.0)
     wall = time.perf_counter() - t0
     import numpy as _np
     return {
@@ -82,6 +85,7 @@ def rollout_ppo(model, env: RendezvousEnv, seed: int,
         "steps": float(_np.mean(steps)),
         "total_distance": float(_np.mean(td)),
         "max_distance": float(_np.mean(md)),
+        "jain": float(_np.mean(jn)),
         "wall_ms_per_step": 1000.0 * wall / max(n_steps_total, 1),
     }
 
@@ -175,7 +179,7 @@ def main():
 
     fields = ["method", "heuristic", "n", "m", "train_seed", "episode",
               "success", "steps", "total_distance", "max_distance",
-              "wall_ms_per_step"]
+              "jain", "wall_ms_per_step"]
     with open(out_dir / "results.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
@@ -188,13 +192,15 @@ def main():
         st = [v["steps"] for v in values_by_key]
         td = [v["total_distance"] for v in values_by_key]
         md = [v["max_distance"] for v in values_by_key]
+        jn = [v.get("jain", 1.0) for v in values_by_key]
         return {"n_maps": len(values_by_key),
                 "success_rate": float(np.mean(succ)),
                 "steps_mean": float(np.mean(st)), "steps_std": float(np.std(st)),
                 "total_dist_mean": float(np.mean(td)),
                 "total_dist_std": float(np.std(td)),
                 "max_dist_mean": float(np.mean(md)),
-                "max_dist_std": float(np.std(md))}
+                "max_dist_std": float(np.std(md)),
+                "jain_mean": float(np.mean(jn)), "jain_std": float(np.std(jn))}
 
     configs = sorted({(r["n"], r["m"]) for r in rows})
     summary, best_h = [], {}
@@ -216,7 +222,8 @@ def main():
                 "all_succeed": all(r["success"] >= 0.999 for r in sel),
                 "steps": float(np.mean([r["steps"] for r in sel])),
                 "total_distance": float(np.mean([r["total_distance"] for r in sel])),
-                "max_distance": float(np.mean([r["max_distance"] for r in sel]))}
+                "max_distance": float(np.mean([r["max_distance"] for r in sel])),
+                "jain": float(np.mean([r["jain"] for r in sel]))}
         ppo_per_map[(n, m)] = per_map
         summary.append({"config": f"N{n}_M{m}", "method": "ppo",
                         "heuristic": "", "train_seed": "mean",
