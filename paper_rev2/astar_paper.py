@@ -201,6 +201,7 @@ def run_astar_episode(env: RendezvousEnv, heuristic: str,
     last_positions: Optional[np.ndarray] = None
     terminated = truncated = False
     info = {}
+    n_obs_col = n_rob_col = 0
 
     while not (terminated or truncated):
         known = obs["known_map"]
@@ -231,6 +232,8 @@ def run_astar_episode(env: RendezvousEnv, heuristic: str,
                                                 nxt[1] - cur_i[1])))
 
         obs, r, terminated, truncated, info = env.step(actions)
+        n_obs_col += info["obstacle_collisions"]
+        n_rob_col += info["robot_collisions"]
         steps_since_plan += 1
         new_pos = obs["robot_positions"]
 
@@ -254,10 +257,14 @@ def run_astar_episode(env: RendezvousEnv, heuristic: str,
 
     d = env.distances.astype(float)
     jain = float((d.sum() ** 2) / (len(d) * (d ** 2).sum())) if d.sum() > 0 else 1.0
+    ok = bool(info.get("is_success", False))
     return {
-        "success": bool(info.get("is_success", False)),
+        "success": ok,
+        "cf_success": ok and n_obs_col == 0,
         "steps": env.step_count,
         "total_distance": info.get("total_distance", int(env.distances.sum())),
         "max_distance": info.get("max_distance", int(env.distances.max())),
         "jain": jain,
+        "obs_collisions": n_obs_col,
+        "robot_collisions": n_rob_col,
     }

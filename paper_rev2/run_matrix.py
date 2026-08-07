@@ -43,6 +43,8 @@ def main():
     p.add_argument("--step-cost", type=float, default=None)
     p.add_argument("--potential-coef", type=float, default=None)
     p.add_argument("--net-width", type=int, default=None)
+    p.add_argument("--collide-obstacle", type=float, default=None)
+    p.add_argument("--collide-robot", type=float, default=None)
     # eval pass-through
     p.add_argument("--eval-out", type=str, default="results")
     p.add_argument("--eval-stochastic", action="store_true")
@@ -51,7 +53,8 @@ def main():
 
     recipe = []
     for flag in ("lr", "ent_coef", "ent_final", "step_cost",
-                 "potential_coef", "net_width"):
+                 "potential_coef", "net_width", "collide_obstacle",
+                 "collide_robot"):
         v = getattr(args, flag)
         if v is not None:
             recipe += ["--" + flag.replace("_", "-"), str(v)]
