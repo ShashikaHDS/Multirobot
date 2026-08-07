@@ -1,9 +1,14 @@
 """Render the reward-sensitivity figure (paper Test case 06) from
-results/reward_sensitivity.csv: 4 panels (one per reward parameter),
-success rate vs perturbation level, one line per robot count, the
-paper's default value marked.
+results/reward_sensitivity.csv.
+
+Two metric rows x 4 reward parameters:
+  row 1  success rate            (saturates at N=3, informative at N=5)
+  row 2  total distance travelled (energy proxy; discriminates everywhere,
+         including where success is at ceiling -- this is what answers the
+         "no sensitivity at small N" objection)
 
     python plot_sensitivity.py [--csv path] [--out figures/sensitivity]
+                               [--metric2 total_dist_mean|steps_mean]
 
 Design notes: categorical palette (validated colorblind-safe trio),
 distinct markers per series so the figure survives grayscale printing,
@@ -31,19 +36,29 @@ PANELS = [
     ("collide_robot", "Robot collision  $r_{rob}$", -5.0),
 ]
 
+METRIC_LABEL = {
+    "success_rate": "Success rate",
+    "total_dist_mean": "Fleet distance (cells)",
+    "steps_mean": "Steps to converge",
+}
+
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--csv", type=str, default="results/reward_sensitivity.csv")
     p.add_argument("--out", type=str, default="figures/sensitivity")
+    p.add_argument("--metric2", type=str, default="total_dist_mean",
+                   choices=["total_dist_mean", "steps_mean"])
     args = p.parse_args()
 
     here = Path(__file__).resolve().parent
-    data = defaultdict(dict)          # (param, n) -> {level: success}
+    metrics = ["success_rate", args.metric2]
+    data = defaultdict(dict)          # (metric, param, n) -> {level: value}
     with open(here / args.csv) as f:
         for row in csv.DictReader(f):
-            data[(row["param"], int(row["n_robots"]))][
-                float(row["level"])] = float(row["success_rate"])
+            for m in metrics:
+                data[(m, row["param"], int(row["n_robots"]))][
+                    float(row["level"])] = float(row[m])
 
     plt.rcParams.update({
         "font.family": "serif", "font.size": 8, "axes.labelsize": 8,
@@ -51,38 +66,48 @@ def main():
         "legend.fontsize": 7.5, "text.color": TEXT, "axes.edgecolor": MUTED,
         "axes.labelcolor": TEXT, "xtick.color": MUTED, "ytick.color": MUTED,
     })
-    fig, axes = plt.subplots(2, 2, figsize=(7.0, 4.6))
+    fig, axes = plt.subplots(2, 4, figsize=(7.16, 4.0))
 
-    for ax, (param, label, default) in zip(axes.flat, PANELS):
-        for n, (color, marker) in SERIES.items():
-            pts = sorted(data.get((param, n), {}).items())
-            if not pts:
-                continue
-            xs = [x for x, _ in pts]
-            ys = [y for _, y in pts]
-            ax.plot(xs, ys, color=color, marker=marker, markersize=4.5,
-                    linewidth=1.6, label=f"N = {n}", clip_on=False,
-                    markeredgecolor="white", markeredgewidth=0.5)
-        ax.axvline(default, color=MUTED, linestyle=(0, (4, 3)),
-                   linewidth=0.9, zorder=0)
-        ax.text(default, 1.045, "default", ha="center", va="bottom",
-                fontsize=6.5, color=MUTED, transform=ax.get_xaxis_transform())
-        ax.set_xlabel(label)
-        ax.set_ylim(0, 1.0)
-        ax.set_ylabel("Success rate")
-        levels = sorted({x for n in SERIES for x in data.get((param, n), {})})
-        if levels:
-            ax.set_xticks(levels)
-            ax.set_xticklabels([f"{v:g}" for v in levels])
-        ax.grid(True, color=GRID, linewidth=0.6, zorder=0)
-        ax.set_axisbelow(True)
-        for spine in ("top", "right"):
-            ax.spines[spine].set_visible(False)
+    for col, (param, label, default) in enumerate(PANELS):
+        levels = sorted({x for m in metrics for n in SERIES
+                         for x in data.get((m, param, n), {})})
+        # discrete sweep levels -> equal spacing (avoids label collisions
+        # from the non-uniform numeric spacing of the tested values)
+        pos = {lv: i for i, lv in enumerate(levels)}
+        for rowi, metric in enumerate(metrics):
+            ax = axes[rowi, col]
+            for n, (color, marker) in SERIES.items():
+                pts = sorted(data.get((metric, param, n), {}).items())
+                if not pts:
+                    continue
+                ax.plot([pos[x] for x, _ in pts], [y for _, y in pts],
+                        color=color, marker=marker, markersize=3.8,
+                        linewidth=1.5, label=f"N = {n}", clip_on=False,
+                        markeredgecolor="white", markeredgewidth=0.5)
+            ax.axvline(pos[default], color=MUTED, linestyle=(0, (4, 3)),
+                       linewidth=0.9, zorder=0)
+            if rowi == 0:
+                ax.text(pos[default], 1.05, "default", ha="center",
+                        va="bottom", fontsize=6.5, color=MUTED,
+                        transform=ax.get_xaxis_transform())
+                ax.set_ylim(0, 1.0)
+            else:
+                ax.set_xlabel(label)
+            if col == 0:
+                ax.set_ylabel(METRIC_LABEL[metric])
+            if levels:
+                ax.set_xlim(-0.35, len(levels) - 0.65)
+                ax.set_xticks(list(pos.values()))
+                ax.set_xticklabels([f"{v:g}" for v in levels])
+            ax.grid(True, color=GRID, linewidth=0.6, zorder=0)
+            ax.set_axisbelow(True)
+            for spine in ("top", "right"):
+                ax.spines[spine].set_visible(False)
 
-    handles, labels = axes.flat[0].get_legend_handles_labels()
+    handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=3, frameon=False,
-               bbox_to_anchor=(0.5, -0.015))
-    fig.tight_layout(rect=(0, 0.045, 1, 1))
+               bbox_to_anchor=(0.5, -0.02))
+    fig.tight_layout(rect=(0, 0.05, 1, 1))
 
     out = here / args.out
     out.parent.mkdir(parents=True, exist_ok=True)
