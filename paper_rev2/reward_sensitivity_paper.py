@@ -41,11 +41,20 @@ from train_paper import EntCoefSchedule
 BASE = dict(potential_coef=0.5, step_cost=-0.1,
             collide_obstacle=-5.0, collide_robot=-5.0, goal=100.0)
 
+# Levels are chosen relative to the reward scale (goal = +100, typical
+# per-step shaping |c_phi * dA| ~ 1-5) so that each parameter is driven
+# past the point where it must dominate the return: the sweep is meant to
+# expose BOTH the robust plateau and its boundaries, not only the plateau.
+#   c_phi   0.02  -> shaping ~ absent (near sparse-reward problem)
+#           5.0   -> a single step's shaping rivals the goal reward
+#   r_step  -5    -> 20 steps of dawdling cost the whole goal reward
+#   r_obs   -100  -> one obstacle contact cancels the goal reward
+#   r_rob   -100  -> one robot contact cancels the goal reward
 SWEEP = {
-    "potential_coef":   [0.1, 0.25, 0.5, 1.0, 2.0],
-    "step_cost":        [-0.5, -0.2, -0.1, -0.05, 0.0],
-    "collide_obstacle": [-20.0, -10.0, -5.0, -1.0, 0.0],
-    "collide_robot":    [-20.0, -10.0, -5.0, -1.0, 0.0],
+    "potential_coef":   [0.02, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0],
+    "step_cost":        [-5.0, -2.0, -1.0, -0.5, -0.2, -0.1, -0.05, 0.0],
+    "collide_obstacle": [-100.0, -50.0, -20.0, -10.0, -5.0, -1.0, 0.0],
+    "collide_robot":    [-100.0, -50.0, -20.0, -10.0, -5.0, -1.0, 0.0],
 }
 
 MAP = 20
@@ -121,8 +130,13 @@ def main():
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--n-envs", type=int, default=8)
     p.add_argument("--robots", type=int, nargs="+", default=[4, 3, 5])
+    p.add_argument("--params", type=str, nargs="+", default=None,
+                   choices=list(SWEEP), help="restrict to these parameters")
     p.add_argument("--out", type=str, default="results/reward_sensitivity.csv")
     args = p.parse_args()
+
+    sweep = {k: v for k, v in SWEEP.items()
+             if args.params is None or k in args.params}
 
     out = Path(__file__).resolve().parent / args.out
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -145,11 +159,11 @@ def main():
                 {"param": param, "level": level, "n_robots": n,
                  "seed": args.seed, "steps": args.steps, **met})
 
-    total = sum(len(v) for v in SWEEP.values()) * len(args.robots)
+    total = sum(len(v) for v in sweep.values()) * len(args.robots)
     i = 0
     default_cache = {}          # n -> metrics of the all-default point
     for n in args.robots:
-        for param, levels in SWEEP.items():
+        for param, levels in sweep.items():
             for level in levels:
                 i += 1
                 if (param, level, n) in done:
