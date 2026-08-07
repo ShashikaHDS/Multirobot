@@ -144,6 +144,8 @@ def main():
     p.add_argument("--move-cost", type=float, default=0.0,
                    help="per-robot per-realized-move reward (energy term, "
                         "e.g. -0.05)")
+    p.add_argument("--collide-obstacle", type=float, default=-5.0)
+    p.add_argument("--collide-robot", type=float, default=-5.0)
     args = p.parse_args()
 
     here = Path(__file__).resolve().parent
@@ -159,7 +161,9 @@ def main():
                     max_steps=args.max_steps,
                     rewards=RewardConfig(step_cost=args.step_cost,
                                          potential_coef=args.potential_coef,
-                                         move_cost=args.move_cost))
+                                         move_cost=args.move_cost,
+                                         collide_obstacle=args.collide_obstacle,
+                                         collide_robot=args.collide_robot))
 
     vec_cls = SubprocVecEnv if args.n_envs > 1 else DummyVecEnv
     env = vec_cls([make_env(cfg, seed=args.seed * 1000 + i)

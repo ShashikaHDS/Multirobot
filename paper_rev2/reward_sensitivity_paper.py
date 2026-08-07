@@ -98,21 +98,31 @@ def train_one(n_robots, rewards, steps, seed, n_envs):
 
 
 def evaluate(model, n_robots):
+    """Always evaluated with the DEFAULT reward metrics, so perturbed runs
+    are scored on the same yardstick.  Collision counts are reported
+    because a weaker collision penalty can raise success while producing a
+    policy that is physically unacceptable on real hardware -- the choice
+    of penalty is a success/contact trade-off, not a pure maximisation."""
     env = RendezvousEnv(EnvConfig(num_robots=n_robots, rows=MAP, cols=MAP))
-    succ, st, td, md, jn = [], [], [], [], []
+    succ, st, td, md, jn, oc, rc = [], [], [], [], [], [], []
     for s in range(EVAL_SEED_BASE, EVAL_SEED_BASE + EVAL_MAPS):
         for k in range(EVAL_SAMPLES):
             torch.manual_seed((s * 1000 + k) % (2 ** 31))
             obs, _ = env.reset(seed=s)
             term = trunc = False
             info = {}
+            n_obs = n_rob = 0
             while not (term or trunc):
                 a, _ = model.predict(obs, deterministic=False)
                 obs, r, term, trunc, info = env.step(a)
+                n_obs += info["obstacle_collisions"]
+                n_rob += info["robot_collisions"]
             succ.append(bool(info.get("is_success")))
             st.append(env.step_count)
             td.append(info["total_distance"])
             md.append(info["max_distance"])
+            oc.append(n_obs)
+            rc.append(n_rob)
             d = env.distances.astype(float)
             jn.append((d.sum() ** 2) / (len(d) * (d ** 2).sum())
                       if d.sum() > 0 else 1.0)
@@ -121,7 +131,9 @@ def evaluate(model, n_robots):
             "steps_mean": float(np.mean(st)),
             "total_dist_mean": float(np.mean(td)),
             "max_dist_mean": float(np.mean(md)),
-            "jain_mean": float(np.mean(jn))}
+            "jain_mean": float(np.mean(jn)),
+            "obs_collisions_mean": float(np.mean(oc)),
+            "robot_collisions_mean": float(np.mean(rc))}
 
 
 def main():
@@ -142,13 +154,27 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
 
     fields = ["param", "level", "n_robots", "seed", "steps", "success_rate",
-              "steps_mean", "total_dist_mean", "max_dist_mean", "jain_mean"]
+              "steps_mean", "total_dist_mean", "max_dist_mean", "jain_mean",
+              "obs_collisions_mean", "robot_collisions_mean"]
     done = set()
     if out.exists():
         with open(out) as f:
-            for row in csv.DictReader(f):
-                done.add((row["param"], float(row["level"]),
-                          int(row["n_robots"])))
+            reader = csv.DictReader(f)
+            old_fields = list(reader.fieldnames or [])
+            old_rows = list(reader)
+        for row in old_rows:
+            done.add((row["param"], float(row["level"]),
+                      int(row["n_robots"])))
+        if old_fields != fields:
+            # schema migration: rewrite with the current header, leaving
+            # newly added metrics blank for rows collected before they existed
+            with open(out, "w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=fields)
+                w.writeheader()
+                for row in old_rows:
+                    w.writerow({k: row.get(k, "") for k in fields})
+            print(f"migrated {out.name} to the current schema "
+                  f"({len(old_rows)} existing rows preserved)")
     else:
         with open(out, "w", newline="") as f:
             csv.DictWriter(f, fieldnames=fields).writeheader()
