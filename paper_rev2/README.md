@@ -1,5 +1,43 @@
 # paper_rev2 — canonical code for the rendezvous paper revision
 
+## How the reward values were selected (answers "why these numbers?")
+
+The sweep in `results/reward_sensitivity.csv` (4 parameters x 7-8 levels
+x N=3,4,5, one-at-a-time, all others at defaults, every model scored with
+the *unperturbed* reward metrics) is the selection procedure, not a
+post-hoc robustness check. Selection rule: **maximise success subject to
+not increasing obstacle contacts**, since contact counts measure
+infeasible waypoint proposals that the low-level controller would have to
+reject on hardware.
+
+Evidence for the chosen values (N=5, the binding configuration):
+
+| parameter | chosen | why |
+|---|---|---|
+| `potential_coef` | **2.0** | 0.85 success at 200k steps vs 0.26 for 0.5 -- a ~7x sample-efficiency gain; degrades again at 5.0, so 1-2 is an interior optimum |
+| `step_cost` | **-0.05** | flat across -5..0 at N=3/4 (spread 0.02/0.08); -0.05 is the best N=5 level and is justified physically as the hotel-load energy term |
+| `collide_obstacle` | **-5** | -1 scores higher on raw success but a full-budget N=5 pilot showed +19% obstacle contacts (86.5 vs 72.6); -5 retained on the contact constraint |
+| `collide_robot` | **-5** | same rule; harsher values (<= -20) collapse success because rendezvous requires tight terminal packing |
+
+Full-budget N=5 pilot (20 maps x 5 stochastic rollouts) isolating the
+trade-off:
+
+| recipe | success | steps | distance | Jain | obs contacts | robot contacts |
+|---|---|---|---|---|---|---|
+| c_phi 0.5, collisions -5 | 0.81 | 141 | 333 | 0.961 | 72.6 | 50.9 |
+| c_phi 2.0, collisions -1 | 0.88 | 101 | 260 | 0.953 | 86.5 | 44.1 |
+
+The shipped recipe takes the shaping gain and declines the collision
+relaxation.
+
+**Metric note.** An "obstacle collision" here is an *attempted* move into
+an occupied cell, which the environment reverts -- the robot never enters
+the obstacle. On hardware the RL layer emits a grid waypoint that the
+Smorphi controller executes, so these events are infeasible waypoint
+proposals (inefficiency), not physical impacts. `cf_success`
+(collision-free success) is reported as the headline metric because it
+cannot be improved by weakening the collision penalty.
+
 ## FINAL RECIPE AND RESULTS (2026-08-05, tag `final`, results_final/)
 
 Training (per run; all values recorded in each run's config.json):
