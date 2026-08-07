@@ -104,7 +104,7 @@ def evaluate(model, n_robots):
     policy that is physically unacceptable on real hardware -- the choice
     of penalty is a success/contact trade-off, not a pure maximisation."""
     env = RendezvousEnv(EnvConfig(num_robots=n_robots, rows=MAP, cols=MAP))
-    succ, st, td, md, jn, oc, rc = [], [], [], [], [], [], []
+    succ, cf, st, td, md, jn, oc, rc = [], [], [], [], [], [], [], []
     for s in range(EVAL_SEED_BASE, EVAL_SEED_BASE + EVAL_MAPS):
         for k in range(EVAL_SAMPLES):
             torch.manual_seed((s * 1000 + k) % (2 ** 31))
@@ -117,7 +117,15 @@ def evaluate(model, n_robots):
                 obs, r, term, trunc, info = env.step(a)
                 n_obs += info["obstacle_collisions"]
                 n_rob += info["robot_collisions"]
-            succ.append(bool(info.get("is_success")))
+            ok = bool(info.get("is_success"))
+            succ.append(ok)
+            # collision-free success: the headline metric must not be
+            # improvable by weakening the collision penalty, otherwise the
+            # sweep rewards policies that bump through obstacles (which
+            # real hardware cannot do). Obstacle contacts are the
+            # safety-critical ones; robot-robot contacts are reported
+            # separately as a coordination metric.
+            cf.append(ok and n_obs == 0)
             st.append(env.step_count)
             td.append(info["total_distance"])
             md.append(info["max_distance"])
@@ -128,6 +136,7 @@ def evaluate(model, n_robots):
                       if d.sum() > 0 else 1.0)
     env.close()
     return {"success_rate": float(np.mean(succ)),
+            "cf_success_rate": float(np.mean(cf)),
             "steps_mean": float(np.mean(st)),
             "total_dist_mean": float(np.mean(td)),
             "max_dist_mean": float(np.mean(md)),
@@ -154,8 +163,9 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
 
     fields = ["param", "level", "n_robots", "seed", "steps", "success_rate",
-              "steps_mean", "total_dist_mean", "max_dist_mean", "jain_mean",
-              "obs_collisions_mean", "robot_collisions_mean"]
+              "cf_success_rate", "steps_mean", "total_dist_mean",
+              "max_dist_mean", "jain_mean", "obs_collisions_mean",
+              "robot_collisions_mean"]
     done = set()
     if out.exists():
         with open(out) as f:
