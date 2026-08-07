@@ -98,7 +98,8 @@ def main():
             if levels:
                 ax.set_xlim(-0.35, len(levels) - 0.65)
                 ax.set_xticks(list(pos.values()))
-                ax.set_xticklabels([f"{v:g}" for v in levels])
+                ax.set_xticklabels([f"{v:g}" for v in levels],
+                                   rotation=45, ha="right", fontsize=6)
             ax.grid(True, color=GRID, linewidth=0.6, zorder=0)
             ax.set_axisbelow(True)
             for spine in ("top", "right"):
