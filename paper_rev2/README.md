@@ -1,5 +1,34 @@
 # paper_rev2 — canonical code for the rendezvous paper revision
 
+## SHIPPED RESULTS: tag `final2` (tuned recipe, RTX 5090) — results_final2/
+
+Recipe: potential shaping **c_phi = 2.0** (γ-correct form), step cost
+−0.05, collisions −5/−5, ent 0.05→0, lr 3e-4, 64-64 MLP, 3 seeds.
+Stochastic protocol (20 held-out maps × 5 seeded rollouts).
+
+| Config | PPO succ | best A* succ | McNemar | PPO steps | PPO dist | Jain |
+|---|---|---|---|---|---|---|
+| N2 20×20 | 1.00 | 1.00 | p=1.0 | 21 | 25 | 0.961 |
+| N3 20×20 | 0.98 | 1.00 | p=1.0 | 62 | 100 | 0.968 |
+| N4 20×20 | 0.96 | 1.00 | p=1.0 | 80 | 163 | 0.966 |
+| N5 20×20 | 0.88 | 1.00 | p=1.0 | 113 | 295 | 0.971 |
+| N5 25×25 | 0.93 | 1.00 | p=1.0 | 101 | 279 | 0.967 |
+
+vs the previous recipe (results_final/): +3pp at N4, +3pp at N5 20×20,
++6pp at N5 25×25, ~12% fewer steps, ~9% less distance. Success remains
+statistically indistinguishable from the strongest A* heuristic in every
+configuration (exact McNemar; at most 1 discordant map per seed).
+
+**Reproducibility:** tag `final3` (results_final3/) is an independent
+end-to-end retrain with the same seeds on the same machine and matches
+final2 metric-for-metric — the fully seeded pipeline reproduces exactly.
+
+**Contact counts:** zero-contact success is rare for BOTH methods (A*
+averages 2–5 blocked move attempts per episode because optimistic
+planning walks into unknown obstacles; PPO 8–71 because stochastic
+execution dithers). Report contacts-per-episode as the honest metric;
+a "contact" is a blocked infeasible waypoint proposal, not an impact.
+
 ## How the reward values were selected (answers "why these numbers?")
 
 The sweep in `results/reward_sensitivity.csv` (4 parameters x 7-8 levels
