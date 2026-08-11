@@ -1,0 +1,78 @@
+{
+  "script": "train_paper.py",
+  "argv": {
+    "n_robots": 5,
+    "map_size": 25,
+    "steps": 2000000,
+    "seed": 0,
+    "n_envs": 16,
+    "lr": 0.0003,
+    "ent_coef": 0.05,
+    "n_steps": 2048,
+    "batch_size": 64,
+    "max_steps": 300,
+    "threshold": 16,
+    "tag": "final2",
+    "logdir": "runs_paper",
+    "device": "auto",
+    "eval_episodes": 10,
+    "eval_freq": 25000,
+    "init_from": null,
+    "ent_final": 0.0,
+    "net_width": 64,
+    "step_cost": -0.05,
+    "potential_coef": 2.0,
+    "move_cost": 0.0,
+    "collide_obstacle": -5.0,
+    "collide_robot": -5.0
+  },
+  "env_config": {
+    "num_robots": 5,
+    "rows": 25,
+    "cols": 25,
+    "lidar_radius": 1,
+    "threshold_area": 16,
+    "max_steps": 300,
+    "num_clusters": 5,
+    "cluster_size_range": [
+      2,
+      10
+    ],
+    "min_cluster_distance": 3.0,
+    "rewards": {
+      "area_decrease": 20.0,
+      "area_increase": -0.5,
+      "collide_obstacle": -5.0,
+      "collide_robot": -5.0,
+      "goal": 100.0,
+      "step_cost": -0.05,
+      "potential_coef": 2.0,
+      "move_cost": 0.0
+    }
+  },
+  "ppo": {
+    "lr": 0.0003,
+    "n_steps": 2048,
+    "batch_size": 64,
+    "n_epochs": 10,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "clip_range": 0.2,
+    "ent_coef": 0.05,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "net_arch": "pi[64,64] vf[64,64] tanh"
+  },
+  "versions": {
+    "python": "3.13.9",
+    "torch": "2.11.0+cu128",
+    "cuda": "12.8",
+    "gpu": "NVIDIA GeForce RTX 5090"
+  },
+  "hostname": "teal-sutd-X870-EAGLE-WIFI7",
+  "git_commit": "237fe73",
+  "init_from": null,
+  "started_unix": 1786108354.7608356,
+  "wall_clock_sec": 946.89,
+  "finished_unix": 1786109301.6513698
+}
