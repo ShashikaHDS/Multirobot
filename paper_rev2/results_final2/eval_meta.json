@@ -1,0 +1,15 @@
+{
+  "episodes": 20,
+  "eval_seed_base": 10000,
+  "protocol": "stochastic",
+  "samples_per_map": 5,
+  "skipped_incomplete_runs": [],
+  "best_heuristic_per_config": {
+    "N2_M20": "bbox",
+    "N3_M20": "median",
+    "N4_M20": "bbox",
+    "N5_M20": "median",
+    "N5_M25": "median"
+  },
+  "timestamp": 1786416637.647139
+}
