@@ -1,6 +1,23 @@
 # paper_rev2 — canonical code for the rendezvous paper revision
 
-## SHIPPED RESULTS: tag `final2` (tuned recipe, RTX 5090) — results_final2/
+## SHIPPED RESULTS: tag `final2m` (uniform 2M steps, RTX 5090) — results_final2m/
+
+Same recipe as final2 but every configuration trained exactly 2M steps
+(uniform budget; entropy annealed over the full 2M). Results match or
+slightly beat final2 (N5 20x20: 0.92 vs 0.88; others within noise), so
+final2m is the headline run: one budget sentence in the paper, and the
+training-curves figure shares one x-axis. final2 (budget ladder) is
+retained below as the budget ablation.
+
+| Config | success | steps | dist | jain |
+|---|---|---|---|---|
+| N2 20x20 | 1.00 | 21 | 24 | 0.955 |
+| N3 20x20 | 0.98 | 64 | 89 | 0.953 |
+| N4 20x20 | 0.95 | 80 | 157 | 0.962 |
+| N5 20x20 | 0.92 | 100 | 255 | 0.969 |
+| N5 25x25 | 0.93 | 101 | 279 | 0.967 |
+
+## Budget-ladder run: tag `final2` (tuned recipe, RTX 5090) — results_final2/
 
 Recipe: potential shaping **c_phi = 2.0** (γ-correct form), step cost
 −0.05, collisions −5/−5, ent 0.05→0, lr 3e-4, 64-64 MLP, 3 seeds.
