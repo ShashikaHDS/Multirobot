@@ -32,13 +32,18 @@ shared env, so success semantics are identical to PPO's.
 """
 
 import heapq
+from collections import deque
 from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
 from env_paper import RendezvousEnv, UNKNOWN, FREE, OBSTACLE
 
-HEURISTICS = ("median", "component", "bbox")
+# "minimax" follows the rendezvous-point criterion of Song et al.,
+# "Multi-Robot Rendezvous in Unknown Environment with Limited
+# Communication" (IEEE RA-L 2024), Eq. 7: choose the point minimising the
+# maximum path length over robots -- the fairness-oriented classical rule.
+HEURISTICS = ("median", "component", "bbox", "minimax")
 
 
 # --------------------------------------------------------------------- #
@@ -91,6 +96,24 @@ def _snap_to_valid(known: np.ndarray, cell: Tuple[int, int], t: int,
     return (cx, cy)
 
 
+def _bfs_distances(known: np.ndarray, start: Tuple[int, int]) -> np.ndarray:
+    """4-connected BFS distance field on the known map, unknown optimistic."""
+    R, C = known.shape
+    INF = np.iinfo(np.int32).max
+    dist = np.full((R, C), INF, dtype=np.int32)
+    dist[start] = 0
+    dq = deque([start])
+    while dq:
+        x, y = dq.popleft()
+        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < R and 0 <= ny < C and known[nx, ny] != OBSTACLE \
+                    and dist[nx, ny] == INF:
+                dist[nx, ny] = dist[x, y] + 1
+                dq.append((nx, ny))
+    return dist
+
+
 def meeting_point(known: np.ndarray, positions: np.ndarray, heuristic: str,
                   t: int, blacklist: Set[Tuple[int, int]]) -> Tuple[int, int]:
     if heuristic == "median":
@@ -137,6 +160,25 @@ def meeting_point(known: np.ndarray, positions: np.ndarray, heuristic: str,
     elif heuristic == "bbox":
         cand = (int(round((positions[:, 0].min() + positions[:, 0].max()) / 2)),
                 int(round((positions[:, 1].min() + positions[:, 1].max()) / 2)))
+    elif heuristic == "minimax":
+        # Song et al. (RA-L 2024) Eq. 7: argmin_p max_i pathlen(robot_i, p),
+        # over goal-valid cells reachable by every robot on the known map
+        # (unknown optimistic); ties broken by total path length.
+        INF = np.iinfo(np.int32).max
+        fields = np.stack([_bfs_distances(known, tuple(p)) for p in positions])
+        reachable = (fields < INF).all(axis=0)
+        valid = goal_valid_cells(known, t) & reachable
+        for bx, by in blacklist:
+            valid[bx, by] = False
+        if valid.any():
+            worst = fields.max(axis=0).astype(np.int64)
+            total = fields.sum(axis=0, dtype=np.int64)
+            score = worst * 100_000 + total
+            score[~valid] = np.iinfo(np.int64).max
+            best = np.unravel_index(np.argmin(score), score.shape)
+            return (int(best[0]), int(best[1]))
+        cand = (int(round(positions[:, 0].mean())),
+                int(round(positions[:, 1].mean())))
     else:
         raise ValueError(heuristic)
     return _snap_to_valid(known, cand, t, blacklist)
