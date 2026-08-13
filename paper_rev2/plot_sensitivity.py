@@ -29,9 +29,11 @@ import matplotlib.pyplot as plt
 SERIES = {3: ("#2a78d6", "o"), 4: ("#eb6834", "s"), 5: ("#1baf7a", "^")}
 TEXT, MUTED, GRID = "#0b0b0b", "#52514e", "#d9d8d4"
 
+# default markers = the SHIPPED recipe (matches reward_sensitivity_paper
+# BASE for the v2 sweep; the archived v1 sweep was centred on 0.5/-0.1)
 PANELS = [
-    ("potential_coef", "Shaping coefficient  $c_\\phi$", 0.5),
-    ("step_cost", "Step cost  $r_{step}$", -0.1),
+    ("potential_coef", "Shaping coefficient  $c_\\phi$", 2.0),
+    ("step_cost", "Step cost  $r_{step}$", -0.05),
     ("collide_obstacle", "Obstacle collision  $r_{obs}$", -5.0),
     ("collide_robot", "Robot collision  $r_{rob}$", -5.0),
 ]

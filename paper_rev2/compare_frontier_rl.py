@@ -78,6 +78,8 @@ def main():
     p.add_argument("--out", type=str, default="results_frontier_rl")
     p.add_argument("--from-csv", action="store_true",
                    help="replot from existing results.csv (no rollouts)")
+    p.add_argument("--tag", type=str, default="final2m",
+                   help="model tag under runs_paper/ for the PPO rows")
     args = p.parse_args()
 
     here = Path(__file__).resolve().parent
@@ -125,7 +127,7 @@ def main():
         for ts in (0, 1, 2):
             key = (n, m, ts)
             if key not in model_cache:
-                mp = here / "runs_paper" / "final2" / f"N{n}_M{m}" \
+                mp = here / "runs_paper" / args.tag / f"N{n}_M{m}" \
                     / f"seed{ts}" / "model.zip"
                 model_cache[key] = PPO.load(str(mp), device="cpu")
             for k in range(5):

@@ -38,7 +38,12 @@ from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 from env_paper import RendezvousEnv, EnvConfig, RewardConfig
 from train_paper import EntCoefSchedule
 
-BASE = dict(potential_coef=0.5, step_cost=-0.1,
+# BASE = the SHIPPED recipe (final2m): the one-at-a-time analysis must
+# hold every other parameter at the published operating point, otherwise
+# the off-axis panels describe a reward nobody trained with.
+# (v1 of the sweep, results/reward_sensitivity.csv, was centred on the
+# pre-tuning defaults c_phi=0.5 / step=-0.1 and is kept for the record.)
+BASE = dict(potential_coef=2.0, step_cost=-0.05,
             collide_obstacle=-5.0, collide_robot=-5.0, goal=100.0)
 
 # Levels are chosen relative to the reward scale (goal = +100, typical
