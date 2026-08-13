@@ -29,6 +29,20 @@ planning walks into unknown obstacles; PPO 8–71 because stochastic
 execution dithers). Report contacts-per-episode as the honest metric;
 a "contact" is a blocked infeasible waypoint proposal, not an impact.
 
+## Frontier-vs-RL 8-map comparison (results_frontier_rl/, figures/frontier_rl*.pdf)
+
+`compare_frontier_rl.py`: focused head-to-head on 8 fixed held-out maps
+(6x 20x20 seeds 10000-10005, 2x 25x25 seeds 10000-10001), N=2-5 on 20x20
+and N=5 on 25x25. Metrics: success, steps, fleet/max distance, Jain,
+contacts, and map-revealed fraction (information efficiency). Key
+pattern: the frontier method is bimodal -- when its one-shot minimax
+commitment is valid it is faster and shorter than PPO with zero
+contacts; when not it fails outright (2 of 8 maps at N=4/5) and its
+balance is erratic (Jain 0.478-0.999); PPO is uniformly reliable
+(success 0.87-1.00 per map, Jain 0.95-0.99). Revealed-% comparable for
+both. `--from-csv` replots without re-rolling. Figures: the 8 map
+layouts with start positions, and a 3-panel comparison.
+
 ## Energy analysis (results_energy/, figures/energy.pdf)
 
 `energy_analysis.py` computes per-robot mission energy from the final2
