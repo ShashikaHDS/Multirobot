@@ -57,8 +57,10 @@ def rollout_ppo(model, env: RendezvousEnv, seed: int,
     (verified: 19/19 deterministic failures were exact position cycles);
     stochastic execution is the symmetry-breaking mechanism.
     """
+    import json as _json
     import torch
     succ, cf, steps, td, md, jn, oc, rc = [], [], [], [], [], [], [], []
+    prd = []                                   # per-robot distances per sample
     t0 = time.perf_counter()
     n_steps_total = 0
     for k in range(samples):
@@ -83,6 +85,7 @@ def rollout_ppo(model, env: RendezvousEnv, seed: int,
         oc.append(n_obs)
         rc.append(n_rob)
         d = env.distances.astype(float)
+        prd.append([int(v) for v in env.distances])
         jn.append(float((d.sum() ** 2) / (len(d) * (d ** 2).sum()))
                   if d.sum() > 0 else 1.0)
     wall = time.perf_counter() - t0
@@ -96,6 +99,8 @@ def rollout_ppo(model, env: RendezvousEnv, seed: int,
         "jain": float(_np.mean(jn)),
         "obs_collisions": float(_np.mean(oc)),
         "robot_collisions": float(_np.mean(rc)),
+        "per_robot_distances": _json.dumps(
+            [round(float(v), 1) for v in _np.mean(prd, axis=0)]),
         "wall_ms_per_step": 1000.0 * wall / max(n_steps_total, 1),
     }
 
@@ -179,7 +184,9 @@ def main():
                 if key in astar_done:
                     continue
                 astar_done.add(key)
-                amet = run_astar_episode(env, h, seed=seed)
+                amet = dict(run_astar_episode(env, h, seed=seed))
+                amet["per_robot_distances"] = json.dumps(
+                    amet["per_robot_distances"])
                 rows.append({"method": "astar", "heuristic": h,
                              "n": run["n"], "m": run["m"],
                              "train_seed": -1, "episode": ep,
@@ -190,7 +197,7 @@ def main():
     fields = ["method", "heuristic", "n", "m", "train_seed", "episode",
               "success", "cf_success", "steps", "total_distance",
               "max_distance", "jain", "obs_collisions", "robot_collisions",
-              "wall_ms_per_step"]
+              "per_robot_distances", "wall_ms_per_step"]
     with open(out_dir / "results.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()

@@ -83,6 +83,38 @@ infeasible waypoint proposals by 19%."
 - Abstract/intro: replace "minimising energy" with "balancing energy
   expenditure across the fleet while minimising mission time".
 
+## 4b. NEW Section IV subsection: "Energy analysis" (references figures/energy.pdf)
+
+> **Energy analysis.** We evaluate mission energy under the platform
+> model $E_i = P_{hotel}T + k_{move}d_i$ without committing to specific
+> hardware constants: writing $\rho$ for the hotel-load share of the
+> energy budget, per-robot energy in normalised units is
+> $E_i(\rho) = \rho T + (1-\rho) d_i$, and all quantities are reported
+> across the full range $\rho \in [0,1]$. Fig. X(a) plots the
+> worst-loaded robot's energy relative to the fleet mean: the learned
+> policy's worst robot never exceeds 1.21× the fleet mean at any power
+> profile — and this bound is invariant across fleet sizes — whereas
+> the classical pipeline's strongest heuristic loads its worst robot up
+> to 1.9× (N=3) and 1.75× (N=5) the fleet mean in motion-dominated
+> regimes, converging to parity only in the trivial limit $\rho \to 1$
+> where energy reduces to shared mission time. Fig. X(b) reports the
+> Jain fairness index of per-robot energy at $\rho = 0.5$: the learned
+> policy holds $J = 0.993$–$0.996$ in every configuration; the
+> distance-optimal geometric-median rule is significantly less fair at
+> every fleet size above two ($J = 0.95$–$0.98$, paired Wilcoxon
+> $p \le 0.002$), while the fairness-oriented minimax rule of Song et
+> al. reaches statistical parity at this operating point
+> ($J = 0.98$–$0.99$) — but, as Table Y shows, only by surrendering the
+> geometric-median rule's distance advantage. The learned policy's
+> balance thus requires neither a heuristic choice nor a favourable
+> power profile: it is uniform across $\rho$, fleet size, and map size.
+> We again note the complementary trade-off: the classical pipeline
+> expends less total energy (shorter paths and missions); the learned
+> policy's contribution is the uniform distribution of expenditure,
+> obtained without any meeting-point selection. *(When the platform
+> power measurement becomes available, the same analysis emits Joules
+> via the script's --p-hotel/--p-drive hook — one sentence to add.)*
+
 ## 5. Evidence backing each claim (all in the repo)
 
 | Claim | Artifact |

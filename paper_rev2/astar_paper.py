@@ -309,4 +309,5 @@ def run_astar_episode(env: RendezvousEnv, heuristic: str,
         "jain": jain,
         "obs_collisions": n_obs_col,
         "robot_collisions": n_rob_col,
+        "per_robot_distances": [int(v) for v in env.distances],
     }

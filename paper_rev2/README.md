@@ -29,6 +29,20 @@ planning walks into unknown obstacles; PPO 8–71 because stochastic
 execution dithers). Report contacts-per-episode as the honest metric;
 a "contact" is a blocked infeasible waypoint proposal, not an impact.
 
+## Energy analysis (results_energy/, figures/energy.pdf)
+
+`energy_analysis.py` computes per-robot mission energy from the final2
+models under the platform model E_i = P_hotel*T + k_move*d_i,
+parameterised by the hotel-load share rho (no hardware constants
+needed; --p-hotel/--p-drive/--step-s emit Joules when measured).
+Findings: PPO's worst-loaded robot stays <= 1.21x the fleet mean at
+every rho and fleet size; the classical pipeline's strongest heuristic
+reaches 1.75-1.9x in motion-dominated regimes. Energy-Jain at rho=0.5:
+PPO 0.993-0.996 everywhere; geometric-median significantly less fair at
+N>=3 (p<=0.002); Song et al.'s minimax rule reaches parity there only by
+giving up median's distance advantage. `--from-csv` replots without
+re-rolling episodes.
+
 ## How the reward values were selected (answers "why these numbers?")
 
 The sweep in `results/reward_sensitivity.csv` (4 parameters x 7-8 levels
