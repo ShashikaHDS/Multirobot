@@ -34,6 +34,9 @@ def main():
     p.add_argument("--n-envs", type=int, default=8)
     p.add_argument("--only", type=str, default=None,
                    help="restrict to one config, e.g. N4_M20")
+    p.add_argument("--steps", type=int, default=None,
+                   help="uniform training budget for every config, "
+                        "overriding the per-config ladder in MATRIX")
     p.add_argument("--eval-after", action="store_true",
                    help="run eval_paper.py when the matrix finishes")
     # recipe pass-through to train_paper.py
@@ -61,6 +64,8 @@ def main():
 
     t0 = time.time()
     for (n, m, steps) in MATRIX:
+        if args.steps:
+            steps = args.steps
         name = f"N{n}_M{m}"
         if args.only and name != args.only:
             continue
