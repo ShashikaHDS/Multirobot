@@ -223,6 +223,70 @@ def postprocess(args, here, out_dir, rows):
                 f"{v['revealed']:.2f} |")
     (out_dir / "per_map.md").write_text("\n".join(lines))
 
+    # ------------- per-robot distance table + stacked figure ----------- #
+    def per_robot(seed, m, n, method):
+        """Robot-slot mean distances. PPO: mean over 15 rollouts;
+        frontier: the reported (stronger) variant's single episode."""
+        if method == "ppo":
+            sel = [r for r in rows if r["method"] == "ppo"
+                   and r["map_seed"] == seed and r["m"] == m and r["n"] == n]
+            mat = np.array([json.loads(r["per_robot_distances"])
+                            for r in sel], dtype=float)
+            return mat.mean(axis=0)
+        var = frontier_cell(seed, m, n)["variant"]
+        r = next(r for r in rows if r["method"] == "frontier"
+                 and r["map_seed"] == seed and r["m"] == m and r["n"] == n
+                 and r["variant"] == var)
+        return np.array(json.loads(r["per_robot_distances"]), dtype=float)
+
+    show_cells = [(s, 20, 4) for s in MAPS_20] + [(s, 25, 5) for s in MAPS_25]
+    lines = ["| Map | Method | " +
+             " | ".join(f"R{i+1}" for i in range(5)) + " | Total |",
+             "|---|---|---|---|---|---|---|---|"]
+    for (seed, m, n) in show_cells:
+        for label in ("ppo", "frontier"):
+            d = per_robot(seed, m, n, label)
+            cells_txt = [f"{v:.1f}" for v in d] + ["–"] * (5 - len(d))
+            lines.append(f"| {m}x{m} #{seed - 10000 + 1} | "
+                         f"{'PPO' if label == 'ppo' else 'Frontier'} | "
+                         + " | ".join(cells_txt) + f" | {d.sum():.1f} |")
+    (out_dir / "per_robot.md").write_text("\n".join(lines))
+
+    robot_hues = ["#2a78d6", "#eb6834", "#1baf7a", "#8250c4", "#b3a13c"]
+    fig, ax = plt.subplots(figsize=(7.16, 3.4))
+    ylabels, ypos = [], []
+    y = 0.0
+    labeled = set()
+    for (seed, m, n) in show_cells:
+        for label, off in (("ppo", 0.0), ("frontier", 0.62)):
+            d = per_robot(seed, m, n, label)
+            left = 0.0
+            for i, v in enumerate(d):
+                leg = f"Robot {i+1}" if i not in labeled else None
+                labeled.add(i)
+                ax.barh(y + off, v, left=left, height=0.52,
+                        color=robot_hues[i], edgecolor="white",
+                        linewidth=0.8, label=leg)
+                left += v
+            ylabels.append(f"{m}×{m} #{seed - 10000 + 1}  "
+                           f"{'PPO' if label == 'ppo' else 'Frontier'}")
+            ypos.append(y + off)
+        y += 1.8
+    ax.set_yticks(ypos)
+    ax.set_yticklabels(ylabels, fontsize=6)
+    ax.invert_yaxis()
+    ax.set_xlabel("Per-robot travelled distance (cells)")
+    ax.legend(frameon=False, fontsize=6.5, ncol=5, loc="lower right")
+    ax.grid(True, axis="x", color=GRID, linewidth=0.6)
+    ax.set_axisbelow(True)
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+    fig.tight_layout()
+    for ext in (".pdf", ".png"):
+        fig.savefig(str(here / "figures" / "per_robot_dist") + ext,
+                    dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
     # --------------------------- map figure --------------------------- #
     plt.rcParams.update({
         "font.family": "serif", "font.size": 8, "text.color": TEXT,
