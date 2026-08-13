@@ -1,0 +1,16 @@
+config,train_seed,vs,both_succeed,ppo_only,astar_only,neither,mcnemar_p
+N2_M20,0,astar_bbox,20,0,0,0,1.0
+N2_M20,1,astar_bbox,20,0,0,0,1.0
+N2_M20,2,astar_bbox,20,0,0,0,1.0
+N3_M20,0,astar_median,19,0,1,0,1.0
+N3_M20,1,astar_median,20,0,0,0,1.0
+N3_M20,2,astar_median,20,0,0,0,1.0
+N4_M20,0,astar_bbox,20,0,0,0,1.0
+N4_M20,1,astar_bbox,19,0,1,0,1.0
+N4_M20,2,astar_bbox,19,0,1,0,1.0
+N5_M20,0,astar_median,18,0,2,0,0.5
+N5_M20,1,astar_median,19,0,1,0,1.0
+N5_M20,2,astar_median,20,0,0,0,1.0
+N5_M25,0,astar_median,20,0,0,0,1.0
+N5_M25,1,astar_median,20,0,0,0,1.0
+N5_M25,2,astar_median,20,0,0,0,1.0
