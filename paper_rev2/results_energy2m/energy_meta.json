@@ -1,0 +1,73 @@
+{
+  "tag": "final2m",
+  "episodes": 20,
+  "samples": 5,
+  "rho_grid": [
+    0.0,
+    0.25,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "best_heuristic_per_config": {
+    "N2_M20": "bbox",
+    "N3_M20": "median",
+    "N4_M20": "bbox",
+    "N5_M20": "median",
+    "N5_M25": "median"
+  },
+  "wilcoxon_energy_jain_rho0.5": {
+    "N2_M20_vs_median": {
+      "ppo_mean": 0.9925,
+      "astar_mean": 0.998,
+      "p_value": 0.00830841064453125
+    },
+    "N2_M20_vs_minimax": {
+      "ppo_mean": 0.9925,
+      "astar_mean": 0.9991,
+      "p_value": 0.0001049041748046875
+    },
+    "N3_M20_vs_median": {
+      "ppo_mean": 0.9942,
+      "astar_mean": 0.952,
+      "p_value": 9.5367431640625e-06
+    },
+    "N3_M20_vs_minimax": {
+      "ppo_mean": 0.9942,
+      "astar_mean": 0.9893,
+      "p_value": 0.956329345703125
+    },
+    "N4_M20_vs_median": {
+      "ppo_mean": 0.995,
+      "astar_mean": 0.9772,
+      "p_value": 0.002712249755859375
+    },
+    "N4_M20_vs_minimax": {
+      "ppo_mean": 0.995,
+      "astar_mean": 0.991,
+      "p_value": 0.49800872802734375
+    },
+    "N5_M20_vs_median": {
+      "ppo_mean": 0.996,
+      "astar_mean": 0.9778,
+      "p_value": 0.005580902099609375
+    },
+    "N5_M20_vs_minimax": {
+      "ppo_mean": 0.996,
+      "astar_mean": 0.9937,
+      "p_value": 0.5458755493164062
+    },
+    "N5_M25_vs_median": {
+      "ppo_mean": 0.9955,
+      "astar_mean": 0.9677,
+      "p_value": 1.33514404296875e-05
+    },
+    "N5_M25_vs_minimax": {
+      "ppo_mean": 0.9955,
+      "astar_mean": 0.9834,
+      "p_value": 0.029575347900390625
+    }
+  },
+  "joules": null,
+  "cell_m": 0.17
+}
