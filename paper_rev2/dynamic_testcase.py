@@ -208,7 +208,7 @@ def plot(trajs, fig_path: Path):
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
 
-    fig, axes = plt.subplots(2, 4, figsize=(12.2, 6.4))
+    fig, axes = plt.subplots(2, 4, figsize=(14.4, 7.6))
     for col in range(4):
         t = trajs[str(col + 1)]
         static = np.array(t["static_map"])
@@ -216,10 +216,15 @@ def plot(trajs, fig_path: Path):
         for row in range(2):
             ax = axes[row, col]
             ax.imshow(np.where(static == 1, 1.0, 0.0), cmap="gray_r",
-                      vmin=0, vmax=1, origin="upper")
-            ax.set_xticks(np.arange(-0.5, M, 1), minor=True)
-            ax.set_yticks(np.arange(-0.5, M, 1), minor=True)
-            ax.grid(which="minor", color=GRID_COLOR, linewidth=0.4)
+                      vmin=0, vmax=1, origin="upper",
+                      interpolation="nearest")
+            # explicit gridlines (minor-grid rendering aliases away at
+            # column scale, which hid some horizontal lines)
+            for g in np.arange(-0.5, M + 0.5, 1):
+                ax.axhline(g, color=GRID_COLOR, linewidth=0.7, zorder=1)
+                ax.axvline(g, color=GRID_COLOR, linewidth=0.7, zorder=1)
+            ax.set_xlim(-0.5, M - 0.5)
+            ax.set_ylim(M - 0.5, -0.5)
             ax.tick_params(which="both", bottom=False, left=False,
                            labelbottom=False, labelleft=False)
             for spine in ax.spines.values():
