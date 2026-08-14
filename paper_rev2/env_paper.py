@@ -94,6 +94,13 @@ class EnvConfig:
     num_clusters: int = 5
     cluster_size_range: Tuple[int, int] = (2, 10)
     min_cluster_distance: float = 3.0
+    # dynamic obstacles (evaluation-time extension; 0 = fully static env).
+    # Each dynamic obstacle spawns on a random static-free cell and performs
+    # an unbiased 4-neighbour random walk over static-free cells, moving
+    # AFTER the robots commit each step, never onto a robot or another
+    # obstacle. Sensed only through the normal LiDAR reveal.
+    num_dynamic_obstacles: int = 0
+    dyn_move_prob: float = 1.0
     rewards: RewardConfig = field(default_factory=RewardConfig)
 
 
@@ -178,6 +185,7 @@ class RendezvousEnv(gym.Env):
     def __init__(self, config: Optional[EnvConfig] = None,
                  fixed_map: Optional[np.ndarray] = None,
                  fixed_starts: Optional[np.ndarray] = None,
+                 fixed_dyn_starts: Optional[np.ndarray] = None,
                  render_mode: Optional[str] = None,
                  seed: Optional[int] = None):
         super().__init__()
@@ -203,6 +211,23 @@ class RendezvousEnv(gym.Env):
                     any(self._fixed_map[p[0], p[1]] == OBSTACLE for p in fs):
                 raise ValueError("fixed_starts placed on an obstacle cell")
 
+        self._fixed_dyn_starts = None if fixed_dyn_starts is None \
+            else np.array(fixed_dyn_starts, dtype=np.int32)
+        if self._fixed_dyn_starts is not None:
+            fd = self._fixed_dyn_starts
+            self.cfg.num_dynamic_obstacles = len(fd)
+            if len({tuple(p) for p in fd}) != len(fd):
+                raise ValueError("fixed_dyn_starts contains duplicate cells")
+            if (fd[:, 0].min() < 0 or fd[:, 0].max() >= self.cfg.rows
+                    or fd[:, 1].min() < 0 or fd[:, 1].max() >= self.cfg.cols):
+                raise ValueError("fixed_dyn_starts out of bounds")
+            if self._fixed_map is not None and \
+                    any(self._fixed_map[p[0], p[1]] == OBSTACLE for p in fd):
+                raise ValueError("fixed_dyn_starts placed on a static obstacle")
+            if self._fixed_starts is not None and \
+                    {tuple(p) for p in fd} & {tuple(p) for p in self._fixed_starts}:
+                raise ValueError("fixed_dyn_starts overlap fixed_starts")
+
         n, R, C = self.cfg.num_robots, self.cfg.rows, self.cfg.cols
         self.action_space = spaces.MultiDiscrete([5] * n)
         self.observation_space = spaces.Dict({
@@ -217,6 +242,8 @@ class RendezvousEnv(gym.Env):
         self._ctor_seed = seed
 
         self.grid_map: np.ndarray = np.zeros((R, C), dtype=np.int8)
+        self._static_map: np.ndarray = np.zeros((R, C), dtype=np.int8)
+        self._dyn_pos: np.ndarray = np.zeros((0, 2), dtype=np.int32)
         self.known_map: np.ndarray = np.full((R, C), UNKNOWN, dtype=np.int8)
         self.positions: np.ndarray = np.zeros((n, 2), dtype=np.int32)
         self.best_area: int = 0
@@ -294,6 +321,36 @@ class RendezvousEnv(gym.Env):
                 raise ValueError("fixed_starts collide with generated map "
                                  "obstacles; supply fixed_map as well")
 
+        # dynamic obstacles: spawn AFTER robot placement so the static map
+        # and robot starts are bit-identical across num_dynamic_obstacles
+        # levels for a given reset seed (paired evaluation design).  With
+        # k == 0 this block consumes no RNG draws.
+        self._static_map = self.grid_map.copy()
+        k = cfg.num_dynamic_obstacles
+        if self._fixed_dyn_starts is not None:
+            fd = self._fixed_dyn_starts
+            robot_cells = {tuple(p) for p in self.positions}
+            for p in fd:
+                if self.grid_map[p[0], p[1]] == OBSTACLE:
+                    raise ValueError("fixed_dyn_starts on a static obstacle")
+                if tuple(p) in robot_cells:
+                    raise ValueError("fixed_dyn_starts on a robot cell")
+            self._dyn_pos = fd.copy()
+        elif k > 0:
+            robot_cells = {tuple(p) for p in self.positions}
+            pool = np.array([c for c in np.argwhere(self.grid_map == FREE)
+                             if tuple(c) not in robot_cells])
+            if len(pool) < k:
+                raise RuntimeError(
+                    f"reset(): only {len(pool)} free non-robot cells for "
+                    f"{k} dynamic obstacles")
+            idx = self.np_random.choice(len(pool), size=k, replace=False)
+            self._dyn_pos = pool[idx].astype(np.int32)
+        else:
+            self._dyn_pos = np.zeros((0, 2), dtype=np.int32)
+        for p in self._dyn_pos:
+            self.grid_map[p[0], p[1]] = OBSTACLE
+
         self.known_map = np.full((cfg.rows, cfg.cols), UNKNOWN, dtype=np.int8)
         for p in self.positions:
             self._reveal(p)
@@ -333,6 +390,14 @@ class RendezvousEnv(gym.Env):
             self.positions[i] = targets[i]
             self._reveal(self.positions[i])
 
+        # dynamic obstacles move after the robots commit (robots acted on
+        # the pre-move obstacle field); re-reveal so known_map reflects the
+        # post-move truth inside every LiDAR window before the goal check
+        if self._dyn_pos.shape[0] > 0:
+            self._move_dynamic_obstacles()
+            for p in self.positions:
+                self._reveal(p)
+
         # ---------------- reward (accumulative, Table III) -------------- #
         rw = cfg.rewards
         reward = 0.0
@@ -371,12 +436,58 @@ class RendezvousEnv(gym.Env):
             "total_distance": int(self.distances.sum()),
             "max_distance": int(self.distances.max()),
             "is_success": terminated,
+            "dyn_positions": self._dyn_pos.copy(),
         }
 
         if self.render_mode == "human":
             self._render_frame()
 
         return self._obs(), reward, terminated, truncated, info
+
+    # ------------------------------------------------------------------ #
+    # dynamic obstacles                                                  #
+    # ------------------------------------------------------------------ #
+    def _move_dynamic_obstacles(self) -> None:
+        """Unbiased 4-neighbour random walk over static-free cells.
+
+        Runs after the robots commit.  Candidate cells exclude static
+        obstacles, committed robot cells, cells already taken this tick,
+        and the current cells of obstacles that have not moved yet, so
+        obstacles never overlap robots or each other (an obstacle may
+        chain-follow into a cell vacated earlier this tick, mirroring the
+        robot semantics).  An obstacle with no candidate, or one gated out
+        by dyn_move_prob, stays put.  All randomness comes from
+        self.np_random, so episodes are reproducible given the reset seed.
+        """
+        k = self._dyn_pos.shape[0]
+        robot_cells = {tuple(p) for p in self.positions}
+        cur_cells = [tuple(p) for p in self._dyn_pos]
+        new_cells = list(cur_cells)
+        taken = set()
+        for i in range(k):
+            gated = (self.cfg.dyn_move_prob < 1.0
+                     and self.np_random.random() > self.cfg.dyn_move_prob)
+            if not gated:
+                cands = []
+                for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    nx, ny = cur_cells[i][0] + dx, cur_cells[i][1] + dy
+                    if not (0 <= nx < self.cfg.rows and 0 <= ny < self.cfg.cols):
+                        continue
+                    cell = (nx, ny)
+                    if (self._static_map[nx, ny] != FREE
+                            or cell in robot_cells or cell in taken
+                            or any(cell == cur_cells[j] for j in range(i + 1, k))):
+                        continue
+                    cands.append(cell)
+                if cands:
+                    new_cells[i] = cands[int(self.np_random.integers(len(cands)))]
+            taken.add(new_cells[i])
+        # two-phase grid rewrite so stayers are handled correctly
+        for cell in cur_cells:
+            self.grid_map[cell] = self._static_map[cell]
+        for cell in new_cells:
+            self.grid_map[cell] = OBSTACLE
+        self._dyn_pos = np.array(new_cells, dtype=np.int32)
 
     # ------------------------------------------------------------------ #
     # collision resolution                                               #

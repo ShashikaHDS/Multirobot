@@ -266,6 +266,199 @@ def test_sb3_env_checker():
     print("PASS sb3_env_checker")
 
 
+# ---------------------------------------------------------------------- #
+# dynamic obstacles (evaluation-time extension)                          #
+# ---------------------------------------------------------------------- #
+
+def test_dyn_static_equivalence():
+    """num_dynamic_obstacles=0 must be bit-for-bit the static env."""
+    a = RendezvousEnv(EnvConfig(num_robots=4))
+    b = RendezvousEnv(EnvConfig(num_robots=4, num_dynamic_obstacles=0))
+    oa, _ = a.reset(seed=11)
+    ob, _ = b.reset(seed=11)
+    assert np.array_equal(a.grid_map, b.grid_map)
+    assert np.array_equal(oa["known_map"], ob["known_map"])
+    rng = np.random.default_rng(3)
+    for _ in range(50):
+        act = rng.integers(0, 5, size=4)
+        ra, rb = a.step(act), b.step(act)
+        assert np.array_equal(ra[0]["known_map"], rb[0]["known_map"])
+        assert np.array_equal(ra[0]["robot_positions"], rb[0]["robot_positions"])
+        assert ra[1] == rb[1] and ra[2] == rb[2] and ra[3] == rb[3]
+        if ra[2] or ra[3]:
+            break
+    print("PASS dyn_static_equivalence")
+
+
+def test_dyn_spawn_validity():
+    for seed in (0, 1, 2, 42):
+        env = RendezvousEnv(EnvConfig(num_robots=4, num_dynamic_obstacles=8))
+        env.reset(seed=seed)
+        dyn = {tuple(p) for p in env._dyn_pos}
+        assert len(dyn) == 8, "spawn count/duplicates"
+        robots = {tuple(p) for p in env.positions}
+        assert not (dyn & robots), "dyn spawned on a robot"
+        for p in env._dyn_pos:
+            assert env._static_map[p[0], p[1]] == FREE, "dyn on static obstacle"
+            assert env.grid_map[p[0], p[1]] == OBSTACLE, "dyn not in composite"
+        g = env.grid_map.copy()
+        for p in env._dyn_pos:
+            g[p[0], p[1]] = env._static_map[p[0], p[1]]
+        assert np.array_equal(g, env._static_map), "composite minus dyn != static"
+    print("PASS dyn_spawn_validity")
+
+
+def test_dyn_paired_maps():
+    """Same reset seed => identical static map and robot starts across k."""
+    a = RendezvousEnv(EnvConfig(num_robots=4, num_dynamic_obstacles=0))
+    b = RendezvousEnv(EnvConfig(num_robots=4, num_dynamic_obstacles=8))
+    a.reset(seed=10005)
+    b.reset(seed=10005)
+    assert np.array_equal(a.grid_map, b._static_map), "static map differs"
+    assert np.array_equal(a.positions, b.positions), "robot starts differ"
+    print("PASS dyn_paired_maps")
+
+
+def test_dyn_forced_move_and_stay():
+    # corridor: obstacle at (3,2) has exactly one free neighbour (3,3);
+    # pocketed obstacle at (5,5) is fully walled -> must stay
+    grid = np.ones((7, 7), dtype=np.int8)
+    grid[3, 2] = FREE
+    grid[3, 3] = FREE
+    grid[1, 1] = FREE          # robot parked far away
+    grid[5, 5] = FREE          # pocket
+    env = RendezvousEnv(EnvConfig(num_robots=1, rows=7, cols=7),
+                        fixed_map=grid, fixed_starts=[(1, 1)],
+                        fixed_dyn_starts=[(3, 2), (5, 5)])
+    env.reset(seed=0)
+    env.step([4])
+    assert tuple(env._dyn_pos[0]) == (3, 3), "forced move not taken"
+    assert tuple(env._dyn_pos[1]) == (5, 5), "walled obstacle moved"
+    assert env.grid_map[3, 2] == FREE, "vacated cell not restored to static"
+    assert env.grid_map[3, 3] == OBSTACLE, "new cell not marked"
+    print("PASS dyn_forced_move_and_stay")
+
+
+def test_dyn_no_move_onto_robot():
+    # obstacle at (3,3); its only static-free neighbour (3,4) holds a robot
+    grid = np.ones((7, 7), dtype=np.int8)
+    grid[3, 3] = FREE
+    grid[3, 4] = FREE
+    grid[1, 1] = FREE
+    env = RendezvousEnv(EnvConfig(num_robots=2, rows=7, cols=7),
+                        fixed_map=grid, fixed_starts=[(1, 1), (3, 4)],
+                        fixed_dyn_starts=[(3, 3)])
+    env.reset(seed=0)
+    env.step([4, 4])
+    assert tuple(env._dyn_pos[0]) == (3, 3), "obstacle moved onto robot"
+    print("PASS dyn_no_move_onto_robot")
+
+
+def test_dyn_blocks_goal():
+    # fleet inside the threshold square; a dynamic obstacle boxed in by the
+    # robots and two static walls sits inside the square and cannot leave,
+    # so the goal must never fire while it is there
+    grid = np.zeros((7, 7), dtype=np.int8)
+    grid[2, 1] = OBSTACLE
+    grid[1, 2] = OBSTACLE
+    starts = [(0, 0), (0, 1), (1, 0)]
+    env = RendezvousEnv(EnvConfig(num_robots=3, rows=7, cols=7,
+                                  threshold_area=4),
+                        fixed_map=grid, fixed_starts=starts,
+                        fixed_dyn_starts=[(1, 1)])
+    env.reset(seed=0)
+    for _ in range(5):
+        obs, r, term, trunc, info = env.step([4, 4, 4])
+        assert tuple(env._dyn_pos[0]) == (1, 1), "boxed obstacle moved"
+        assert not term, "goal fired with dynamic obstacle in the square"
+    # without the dynamic obstacle the same configuration terminates at once
+    env2 = RendezvousEnv(EnvConfig(num_robots=3, rows=7, cols=7,
+                                   threshold_area=4),
+                         fixed_map=grid, fixed_starts=starts)
+    env2.reset(seed=0)
+    _, _, term2, _, _ = env2.step([4, 4, 4])
+    assert term2, "static control did not terminate"
+    print("PASS dyn_blocks_goal")
+
+
+def test_dyn_robot_blocked():
+    # robot tries to step into a walled (immobile) dynamic obstacle
+    grid = np.ones((7, 7), dtype=np.int8)
+    grid[3, 3] = FREE          # dyn obstacle pocket (walled)
+    grid[3, 2] = FREE          # robot cell adjacent
+    grid[1, 1] = FREE
+    env = RendezvousEnv(EnvConfig(num_robots=2, rows=7, cols=7),
+                        fixed_map=grid, fixed_starts=[(3, 2), (1, 1)],
+                        fixed_dyn_starts=[(3, 3)])
+    env.reset(seed=0)
+    obs, r, term, trunc, info = env.step([3, 4])   # robot 0 right into dyn
+    assert tuple(env.positions[0]) == (3, 2), "move not reverted"
+    assert info["obstacle_collisions"] == 1, "contact not counted"
+    rw = env.cfg.rewards
+    assert abs(r - (rw.collide_obstacle + rw.step_cost)) < 1e-9, \
+        "reward != obstacle penalty + step cost"
+    print("PASS dyn_robot_blocked")
+
+
+def test_dyn_ghost_memory():
+    # robot sees the obstacle, walks away, obstacle moves: the vacated cell
+    # keeps its stale OBSTACLE value in known_map (a ghost) once it lies
+    # outside every LiDAR window, while the true grid there is FREE
+    grid = np.zeros((9, 9), dtype=np.int8)
+    env = RendezvousEnv(EnvConfig(num_robots=2, rows=9, cols=9),
+                        fixed_map=grid, fixed_starts=[(1, 1), (8, 8)],
+                        fixed_dyn_starts=[(2, 2)])
+    env.reset(seed=0)
+    assert env.known_map[2, 2] == OBSTACLE, "dyn not revealed at reset"
+    ghost_seen = False
+    for _ in range(80):
+        env.step([3, 4])                   # robot 0 walks right, robot 1 stays
+        rx, ry = env.positions[0]
+        outside = abs(2 - rx) > 1 or abs(2 - ry) > 1
+        if outside and tuple(env._dyn_pos[0]) != (2, 2) \
+                and env.grid_map[2, 2] == FREE:
+            assert env.known_map[2, 2] == OBSTACLE, "ghost was cleared"
+            ghost_seen = True
+            break
+    assert ghost_seen, "ghost condition never arose within 80 steps"
+    print("PASS dyn_ghost_memory")
+
+
+def test_dyn_determinism():
+    a = RendezvousEnv(EnvConfig(num_robots=4, num_dynamic_obstacles=6))
+    b = RendezvousEnv(EnvConfig(num_robots=4, num_dynamic_obstacles=6))
+    a.reset(seed=99)
+    b.reset(seed=99)
+    assert np.array_equal(a._dyn_pos, b._dyn_pos), "spawn differs"
+    rng = np.random.default_rng(5)
+    for _ in range(50):
+        act = rng.integers(0, 5, size=4)
+        ra, rb = a.step(act), b.step(act)
+        assert np.array_equal(a._dyn_pos, b._dyn_pos), "walk diverged"
+        assert ra[1] == rb[1]
+        assert np.array_equal(ra[0]["known_map"], rb[0]["known_map"])
+        if ra[2] or ra[3]:
+            break
+    print("PASS dyn_determinism")
+
+
+def test_fixed_dyn_starts_validation():
+    grid = np.zeros((7, 7), dtype=np.int8)
+    grid[2, 2] = OBSTACLE
+    for bad in ([(1, 1), (1, 1)],            # duplicate
+                [(9, 9)],                    # out of bounds
+                [(2, 2)],                    # on static obstacle
+                [(0, 0)]):                   # on a robot (fixed_starts)
+        try:
+            RendezvousEnv(EnvConfig(num_robots=2, rows=7, cols=7),
+                          fixed_map=grid, fixed_starts=[(0, 0), (6, 6)],
+                          fixed_dyn_starts=bad)
+            raise AssertionError(f"validation accepted {bad}")
+        except ValueError:
+            pass
+    print("PASS fixed_dyn_starts_validation")
+
+
 if __name__ == "__main__":
     test_determinism()
     test_unknown_init()
@@ -285,4 +478,14 @@ if __name__ == "__main__":
     test_fixed_starts_validation()
     test_astar_baseline_sanity()
     test_sb3_env_checker()
+    test_dyn_static_equivalence()
+    test_dyn_spawn_validity()
+    test_dyn_paired_maps()
+    test_dyn_forced_move_and_stay()
+    test_dyn_no_move_onto_robot()
+    test_dyn_blocks_goal()
+    test_dyn_robot_blocked()
+    test_dyn_ghost_memory()
+    test_dyn_determinism()
+    test_fixed_dyn_starts_validation()
     print("\nAll tests passed.")
