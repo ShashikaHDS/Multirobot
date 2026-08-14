@@ -206,9 +206,9 @@ def plot(trajs, fig_path: Path):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
-    from matplotlib.patches import Patch
+    from matplotlib.patches import FancyArrowPatch, Patch
 
-    fig, axes = plt.subplots(2, 4, figsize=(14.4, 7.6))
+    fig, axes = plt.subplots(2, 4, figsize=(14.4, 8.0))
     for col in range(4):
         t = trajs[str(col + 1)]
         static = np.array(t["static_map"])
@@ -262,10 +262,22 @@ def plot(trajs, fig_path: Path):
     handles.append(Line2D([0], [0], color=DYN_COLOR, linestyle=(0, (2, 2)),
                           label="Obstacle trail"))
     fig.legend(handles=handles, loc="lower center", ncol=6, frameon=False,
-               fontsize=10, bbox_to_anchor=(0.5, -0.01))
-    fig.tight_layout(rect=(0, 0.04, 1, 1))
-    fig.savefig(fig_path.with_suffix(".pdf"), bbox_inches="tight")
-    fig.savefig(fig_path.with_suffix(".png"), dpi=160, bbox_inches="tight")
+               fontsize=10, bbox_to_anchor=(0.5, 0.0))
+    # clear gap between the two rows, with a blue arrow linking each initial
+    # map to its travelled-paths panel (matching the earlier test-case figures)
+    fig.subplots_adjust(left=0.01, right=0.99, top=0.955, bottom=0.075,
+                        wspace=0.05, hspace=0.14)
+    for col in range(4):
+        pt = axes[0, col].get_position()
+        pb = axes[1, col].get_position()
+        x = (pt.x0 + pt.x1) / 2
+        fig.add_artist(FancyArrowPatch(
+            (x, pt.y0 - 0.006), (x, pb.y1 + 0.006),
+            transform=fig.transFigure, color="#2878a0", linewidth=0,
+            arrowstyle="simple,head_width=10,head_length=7,tail_width=3.5",
+            mutation_scale=1.6))
+    fig.savefig(fig_path.with_suffix(".pdf"))
+    fig.savefig(fig_path.with_suffix(".png"), dpi=160)
     print("saved", fig_path.with_suffix(".pdf"))
 
 
