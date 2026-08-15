@@ -1,0 +1,2 @@
+config,n_rollouts,success_rate,steps_mean,dist_cells_mean,max_dist_cells_mean,jain_mean,obstacle_rejections_mean,sim_time_mean_s
+N4_M20,36,0.9722,75.2,125.3,42.2,0.9455,62.2,28.4
