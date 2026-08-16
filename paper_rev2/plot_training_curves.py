@@ -63,6 +63,8 @@ def main():
     p.add_argument("--logdir", type=str, default="runs_paper")
     p.add_argument("--out", type=str, default="figures/training_curves")
     p.add_argument("--smooth", type=int, default=5)
+    p.add_argument("--column", action="store_true",
+                   help="single-column figure, episode-length panel only")
     args = p.parse_args()
 
     here = Path(__file__).resolve().parent
@@ -92,7 +94,12 @@ def main():
         "text.color": TEXT, "axes.edgecolor": MUTED, "axes.labelcolor": TEXT,
         "xtick.color": MUTED, "ytick.color": MUTED,
     })
-    fig, axes = plt.subplots(1, 2, figsize=(7.16, 2.9))
+    if args.column:
+        TAGS[:] = TAGS[1:]                 # episode-length panel only
+        fig, ax_one = plt.subplots(1, 1, figsize=(3.45, 2.5))
+        axes = [ax_one]
+    else:
+        fig, axes = plt.subplots(1, 2, figsize=(7.16, 2.1))
 
     for ax, (tag, ylabel) in zip(axes, TAGS):
         for (n, m) in configs:
@@ -122,9 +129,9 @@ def main():
             plt.FuncFormatter(lambda v, _: f"{v/1e6:g}M" if v else "0"))
 
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=5, frameon=False,
-               bbox_to_anchor=(0.5, -0.03))
-    fig.tight_layout(rect=(0, 0.06, 1, 1))
+    fig.legend(handles, labels, loc="lower center", ncol=3 if args.column else 5,
+               frameon=False, bbox_to_anchor=(0.5, -0.03))
+    fig.tight_layout(rect=(0, 0.14 if args.column else 0.06, 1, 1))
 
     out = here / args.out
     out.parent.mkdir(parents=True, exist_ok=True)
