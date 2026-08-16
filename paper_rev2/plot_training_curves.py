@@ -59,7 +59,7 @@ def smooth(y, w=5):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--tag", type=str, default="final2")
+    p.add_argument("--tag", type=str, default="final2m")
     p.add_argument("--logdir", type=str, default="runs_paper")
     p.add_argument("--out", type=str, default="figures/training_curves")
     p.add_argument("--smooth", type=int, default=5)
@@ -128,8 +128,11 @@ def main():
                     label=f"N = {n}" + (f" ({m}×{m})" if m != 20 else ""))
         ax.set_xlabel("Environment steps")
         if args.narrow:
-            ax.set_ylabel(ylabel.replace("Mean episode", "Episode")
-                          .replace(" (steps)", ""))
+            # horizontal panel title instead of a rotated ylabel, so the
+            # axes reclaim the label's horizontal space
+            ax.set_title(ylabel.replace("Mean episode", "Episode")
+                         .replace(" (steps)", ""),
+                         fontsize=7, loc="left", pad=3)
         else:
             ax.set_ylabel(ylabel)
         ax.grid(True, color=GRID, linewidth=0.6)
@@ -150,8 +153,6 @@ def main():
             ax.tick_params(labelsize=6, pad=1.5)
             ax.tick_params(which="minor", length=2)
             ax.xaxis.label.set_size(7)
-            ax.yaxis.label.set_size(7)
-            ax.yaxis.labelpad = 1.5
             ax.xaxis.labelpad = 1.5
 
     handles, labels = axes[0].get_legend_handles_labels()
