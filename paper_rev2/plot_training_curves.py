@@ -124,7 +124,7 @@ def main():
             ax.fill_between(xg, ymat.min(axis=0), ymat.max(axis=0),
                             color=color, alpha=0.13, linewidth=0)
             ax.plot(xg, mean, color=color, linestyle=STYLE[m],
-                    linewidth=1.7,
+                    linewidth=1.0 if args.narrow else 1.7,
                     label=f"N = {n}" + (f" ({m}×{m})" if m != 20 else ""))
         ax.set_xlabel("Environment steps")
         if args.narrow:
@@ -142,11 +142,17 @@ def main():
         if args.stacked:
             ax.xaxis.set_major_locator(plt.MaxNLocator(5))
         if args.narrow:
-            ax.xaxis.set_major_locator(plt.FixedLocator([0, 1e6, 2e6]))
+            ax.xaxis.set_major_locator(plt.FixedLocator(
+                [0, 0.5e6, 1e6, 1.5e6, 2e6]))
+            ax.xaxis.set_minor_locator(plt.FixedLocator(
+                [0.25e6, 0.75e6, 1.25e6, 1.75e6]))
             ax.yaxis.set_major_locator(plt.MaxNLocator(4))
-            ax.tick_params(labelsize=6.5)
+            ax.tick_params(labelsize=6, pad=1.5)
+            ax.tick_params(which="minor", length=2)
             ax.xaxis.label.set_size(7)
             ax.yaxis.label.set_size(7)
+            ax.yaxis.labelpad = 1.5
+            ax.xaxis.labelpad = 1.5
 
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=3 if (args.column or args.stacked or args.narrow) else 5,
