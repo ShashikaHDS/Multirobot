@@ -129,10 +129,11 @@ def main():
         ax.set_xlabel("Environment steps")
         if args.narrow:
             # horizontal panel title instead of a rotated ylabel, so the
-            # axes reclaim the label's horizontal space
+            # axes reclaim the label's horizontal space; two lines shifted
+            # left over the tick labels so it reads as the y-axis name
             ax.set_title(ylabel.replace("Mean episode", "Episode")
-                         .replace(" (steps)", ""),
-                         fontsize=7, loc="left", pad=3)
+                         .replace(" (steps)", "").replace(" ", "\n"),
+                         fontsize=7, loc="left", pad=3, x=-0.15)
         else:
             ax.set_ylabel(ylabel)
         ax.grid(True, color=GRID, linewidth=0.6)
