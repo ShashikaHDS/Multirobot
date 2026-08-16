@@ -26,6 +26,20 @@ the physics and sensing, not from bridge bugs.
 
 ## Run it on the 5090
 
+Easiest path, `run_smoke.sh` finds the Isaac Sim python itself (an
+importable `isaacsim` in the active env, else the usual `python.sh`
+locations), installs SB3 if missing, and runs the protocol:
+
+```bash
+cd <repo>/paper_rev2/isaac
+bash run_smoke.sh          # smoke, 2 maps at N=4, ~5 min
+bash run_smoke.sh full     # full protocol, ~1-3 h
+bash run_smoke.sh noise    # localisation-noise sweep
+```
+
+If detection fails it prints every location it searched, so pass the
+correct python explicitly using the manual commands below.
+
 One-time, install SB3 into the Isaac Sim python:
 
 ```bash
