@@ -208,7 +208,7 @@ def plot(trajs, fig_path: Path):
     from matplotlib.lines import Line2D
     from matplotlib.patches import FancyArrowPatch, Patch
 
-    fig, axes = plt.subplots(2, 4, figsize=(14.4, 8.0))
+    fig, axes = plt.subplots(2, 4, figsize=(14.4, 7.0))
     for col in range(4):
         t = trajs[str(col + 1)]
         static = np.array(t["static_map"])
@@ -230,7 +230,8 @@ def plot(trajs, fig_path: Path):
             for spine in ax.spines.values():
                 spine.set_color("#555555")
         ax = axes[0, col]
-        ax.set_title(f"Map 0{col + 1}  ($k={k}$)", fontsize=11)
+        ax.set_title(f"({chr(97 + col)}) Map 0{col + 1}  ($k={k}$)",
+                     fontsize=11)
         for i, p in enumerate(t["starts"]):
             ax.add_patch(plt.Rectangle((p[1] - 0.5, p[0] - 0.5), 1, 1,
                                        color=ROBOT_COLORS[i]))
@@ -254,7 +255,7 @@ def plot(trajs, fig_path: Path):
                     linewidth=1.6)
             ax.add_patch(plt.Rectangle((arr[-1, 1] - 0.5, arr[-1, 0] - 0.5),
                                        1, 1, color=ROBOT_COLORS[i]))
-        ax.set_xlabel(f"({chr(96 + col + 1)})", fontsize=11)
+        ax.set_xlabel(f"({chr(101 + col)})", fontsize=11)
 
     handles = [Patch(color=ROBOT_COLORS[i], label=f"Robot {i + 1}")
                for i in range(4)]

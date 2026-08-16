@@ -109,7 +109,7 @@ def main():
     else:
         fig, axes = plt.subplots(1, 2, figsize=(7.16, 2.1))
 
-    for ax, (tag, ylabel) in zip(axes, TAGS):
+    for idx, (ax, (tag, ylabel)) in enumerate(zip(axes, TAGS)):
         for (n, m) in configs:
             runs = data[tag].get((n, m), {})
             if not runs:
@@ -128,6 +128,7 @@ def main():
                     label=f"N = {n}" + (f" ({m}×{m})" if m != 20 else ""))
         ax.set_xlabel("Environment steps")
         if args.narrow:
+            ax.set_xlabel(f"Environment steps\n({chr(97 + idx)})")
             # horizontal panel title instead of a rotated ylabel, so the
             # axes reclaim the label's horizontal space; two lines shifted
             # left over the tick labels so it reads as the y-axis name

@@ -47,7 +47,8 @@ METRIC_LABEL = {
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--csv", type=str, default="results/reward_sensitivity.csv")
+    p.add_argument("--csv", type=str,
+                   default="results/reward_sensitivity_v2.csv")
     p.add_argument("--out", type=str, default="figures/sensitivity")
     p.add_argument("--metric2", type=str, default="total_dist_mean",
                    choices=["total_dist_mean", "steps_mean"])
@@ -68,7 +69,7 @@ def main():
         "legend.fontsize": 7.5, "text.color": TEXT, "axes.edgecolor": MUTED,
         "axes.labelcolor": TEXT, "xtick.color": MUTED, "ytick.color": MUTED,
     })
-    fig, axes = plt.subplots(2, 4, figsize=(7.16, 4.0))
+    fig, axes = plt.subplots(2, 4, figsize=(7.16, 3.2))
 
     for col, (param, label, default) in enumerate(PANELS):
         levels = sorted({x for m in metrics for n in SERIES
@@ -96,7 +97,8 @@ def main():
             else:
                 ax.set_xlabel(label)
             if col == 0:
-                ax.set_ylabel(METRIC_LABEL[metric])
+                ax.set_ylabel(("(a) " if rowi == 0 else "(b) ")
+                              + METRIC_LABEL[metric])
             if levels:
                 ax.set_xlim(-0.35, len(levels) - 0.65)
                 ax.set_xticks(list(pos.values()))
