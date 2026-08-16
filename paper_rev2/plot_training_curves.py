@@ -157,9 +157,18 @@ def main():
             ax.xaxis.labelpad = 1.5
 
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=3 if (args.column or args.stacked or args.narrow) else 5,
-               frameon=False, bbox_to_anchor=(0.5, -0.03))
-    fig.tight_layout(rect=(0, 0.22 if args.narrow else (0.14 if args.column else (0.10 if args.stacked else 0.06)), 1, 1))
+    if args.narrow:
+        # compact legend and slim inter-panel gap so the axes grow
+        fig.legend(handles, labels, loc="lower center", ncol=3,
+                   frameon=False, bbox_to_anchor=(0.5, -0.04),
+                   fontsize=7, handlelength=1.3, columnspacing=0.9,
+                   handletextpad=0.5, labelspacing=0.3, borderpad=0)
+        fig.tight_layout(rect=(0, 0.15, 1, 1), w_pad=0.5)
+    else:
+        fig.legend(handles, labels, loc="lower center",
+                   ncol=3 if (args.column or args.stacked) else 5,
+                   frameon=False, bbox_to_anchor=(0.5, -0.03))
+        fig.tight_layout(rect=(0, 0.14 if args.column else (0.10 if args.stacked else 0.06), 1, 1))
 
     out = here / args.out
     out.parent.mkdir(parents=True, exist_ok=True)
