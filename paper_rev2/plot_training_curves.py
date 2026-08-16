@@ -65,6 +65,8 @@ def main():
     p.add_argument("--smooth", type=int, default=5)
     p.add_argument("--column", action="store_true",
                    help="single-column figure, episode-length panel only")
+    p.add_argument("--stacked", action="store_true",
+                   help="single-column figure, both panels stacked")
     args = p.parse_args()
 
     here = Path(__file__).resolve().parent
@@ -98,6 +100,8 @@ def main():
         TAGS[:] = TAGS[1:]                 # episode-length panel only
         fig, ax_one = plt.subplots(1, 1, figsize=(3.45, 2.5))
         axes = [ax_one]
+    elif args.stacked:
+        fig, axes = plt.subplots(2, 1, figsize=(3.45, 4.1))
     else:
         fig, axes = plt.subplots(1, 2, figsize=(7.16, 2.1))
 
@@ -127,11 +131,13 @@ def main():
             ax.spines[spine].set_visible(False)
         ax.xaxis.set_major_formatter(
             plt.FuncFormatter(lambda v, _: f"{v/1e6:g}M" if v else "0"))
+        if args.stacked:
+            ax.xaxis.set_major_locator(plt.MaxNLocator(5))
 
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=3 if args.column else 5,
+    fig.legend(handles, labels, loc="lower center", ncol=3 if (args.column or args.stacked) else 5,
                frameon=False, bbox_to_anchor=(0.5, -0.03))
-    fig.tight_layout(rect=(0, 0.14 if args.column else 0.06, 1, 1))
+    fig.tight_layout(rect=(0, 0.14 if args.column else (0.10 if args.stacked else 0.06), 1, 1))
 
     out = here / args.out
     out.parent.mkdir(parents=True, exist_ok=True)
