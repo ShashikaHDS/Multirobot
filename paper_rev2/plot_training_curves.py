@@ -67,6 +67,8 @@ def main():
                    help="single-column figure, episode-length panel only")
     p.add_argument("--stacked", action="store_true",
                    help="single-column figure, both panels stacked")
+    p.add_argument("--narrow", action="store_true",
+                   help="single-column figure, both panels side by side")
     args = p.parse_args()
 
     here = Path(__file__).resolve().parent
@@ -102,6 +104,8 @@ def main():
         axes = [ax_one]
     elif args.stacked:
         fig, axes = plt.subplots(2, 1, figsize=(3.45, 4.1))
+    elif args.narrow:
+        fig, axes = plt.subplots(1, 2, figsize=(3.45, 1.75))
     else:
         fig, axes = plt.subplots(1, 2, figsize=(7.16, 2.1))
 
@@ -123,7 +127,11 @@ def main():
                     linewidth=1.7,
                     label=f"N = {n}" + (f" ({m}×{m})" if m != 20 else ""))
         ax.set_xlabel("Environment steps")
-        ax.set_ylabel(ylabel)
+        if args.narrow:
+            ax.set_ylabel(ylabel.replace("Mean episode", "Episode")
+                          .replace(" (steps)", ""))
+        else:
+            ax.set_ylabel(ylabel)
         ax.grid(True, color=GRID, linewidth=0.6)
         ax.set_axisbelow(True)
         ax.margins(x=0)
@@ -133,11 +141,17 @@ def main():
             plt.FuncFormatter(lambda v, _: f"{v/1e6:g}M" if v else "0"))
         if args.stacked:
             ax.xaxis.set_major_locator(plt.MaxNLocator(5))
+        if args.narrow:
+            ax.xaxis.set_major_locator(plt.FixedLocator([0, 1e6, 2e6]))
+            ax.yaxis.set_major_locator(plt.MaxNLocator(4))
+            ax.tick_params(labelsize=6.5)
+            ax.xaxis.label.set_size(7)
+            ax.yaxis.label.set_size(7)
 
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=3 if (args.column or args.stacked) else 5,
+    fig.legend(handles, labels, loc="lower center", ncol=3 if (args.column or args.stacked or args.narrow) else 5,
                frameon=False, bbox_to_anchor=(0.5, -0.03))
-    fig.tight_layout(rect=(0, 0.14 if args.column else (0.10 if args.stacked else 0.06), 1, 1))
+    fig.tight_layout(rect=(0, 0.22 if args.narrow else (0.14 if args.column else (0.10 if args.stacked else 0.06)), 1, 1))
 
     out = here / args.out
     out.parent.mkdir(parents=True, exist_ok=True)
