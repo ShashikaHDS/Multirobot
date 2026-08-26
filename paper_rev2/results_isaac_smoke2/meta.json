@@ -1,0 +1,13 @@
+{
+ "backend": "isaac",
+ "tag": "final2m",
+ "maps": 2,
+ "samples": 2,
+ "reveal": "lidar",
+ "noise": 0.0,
+ "cell_size": 0.25,
+ "vmax": 0.5,
+ "n_beams": 72,
+ "eval_seed_base": 10000,
+ "elapsed_s": 30.9
+}
