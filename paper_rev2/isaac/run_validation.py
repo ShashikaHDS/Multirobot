@@ -37,6 +37,45 @@ from bridge import LockstepRunner, RunnerConfig  # noqa: E402
 EVAL_SEED_BASE = 10_000
 
 
+def _alias_numpy_core():
+    """Let numpy-1.x hosts unpickle objects saved under numpy 2.
+
+    The models were trained with numpy 2 (module path ``numpy._core``);
+    Isaac Sim's bundled python ships numpy 1.x (``numpy.core``).
+    """
+    if hasattr(np, "_core"):
+        return
+    import importlib
+    core = importlib.import_module("numpy.core")
+    sys.modules.setdefault("numpy._core", core)
+    for sub in ("multiarray", "numeric", "umath", "_multiarray_umath",
+                "fromnumeric", "numerictypes"):
+        try:
+            mod = importlib.import_module(f"numpy.core.{sub}")
+        except ImportError:
+            continue
+        sys.modules.setdefault(f"numpy._core.{sub}", mod)
+
+
+def load_policy(path: Path, spaces_env):
+    """Load a trained PPO robustly across python/numpy versions.
+
+    Pickled schedules (py3.9 cloudpickle lambdas) and gym spaces (numpy-2
+    arrays) are the fragile parts of an SB3 zip; supply them directly
+    instead so only the network weights are read from the file.
+    """
+    from stable_baselines3 import PPO
+    _alias_numpy_core()
+    custom = {
+        "learning_rate": 0.0,
+        "lr_schedule": lambda _: 0.0,
+        "clip_range": lambda _: 0.0,
+        "observation_space": spaces_env.observation_space,
+        "action_space": spaces_env.action_space,
+    }
+    return PPO.load(str(path), device="cpu", custom_objects=custom)
+
+
 def discover_runs(logdir: Path, tag: str, ns, ms):
     runs = []
     for cfg_dir in sorted((logdir / tag).iterdir()):
@@ -88,7 +127,6 @@ def main():
         backend = IsaacBackend(vmax=args.vmax, n_beams=args.n_beams,
                                headless=not args.windowed)
 
-    from stable_baselines3 import PPO
     runs = discover_runs(Path(args.logdir), args.tag, ns, ms)
     if not runs:
         raise SystemExit("no runs found; check --logdir/--tag/--n/--m")
@@ -99,9 +137,9 @@ def main():
     rows = []
     t0 = time.time()
     for run in runs:
-        model = PPO.load(str(run["model"]), device="cpu")
         oracle = RendezvousEnv(EnvConfig(num_robots=run["n"],
                                          rows=run["m"], cols=run["m"]))
+        model = load_policy(run["model"], oracle)
         for ep in range(args.maps):
             map_seed = EVAL_SEED_BASE + ep
             oracle.reset(seed=map_seed)
