@@ -1,0 +1,6 @@
+# raw CAD exports (large); the merged mesh is committed instead
+isaac/ref/cad/Tiley_Single.STEP
+isaac/ref/cad/Tiley_Single - *.STL
+isaac/ref/cad/export_log.txt
+isaac/ref/cad_coarse/Tiley_Single - *.STL
+isaac/ref/cad_coarse/export_log.txt
