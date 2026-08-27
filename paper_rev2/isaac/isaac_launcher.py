@@ -394,11 +394,11 @@ def launch_gui(isaac_py: str | None):
     ask_out_var = tk.BooleanVar(value=True)
 
     def browse_out():
-        d = filedialog.askdirectory(title="Save videos and stills in ...",
-                                    initialdir=out_var.get() or str(PAPER), mustexist=False)
+        d = choose_folder("Save videos and stills in ...", out_var.get() or str(PAPER))
         if d:
             out_var.set(d)
             out_edited.set(True)
+            append(f"output folder: {d}")
         return d
     outbtns = ttk.Frame(w)
     outbtns.grid(row=r, column=5, sticky="w")
@@ -871,6 +871,26 @@ def launch_gui(isaac_py: str | None):
         root.after(500, root.destroy)
     poll()
     root.mainloop()
+
+
+def choose_folder(title: str, initial: str) -> str:
+    """Native folder chooser (GNOME's via zenity, KDE's via kdialog); falls
+    back to Tk's own dialog, whose Linux version only returns a folder that
+    is explicitly selected."""
+    import shutil
+    initial = str(Path(initial))
+    start = initial if Path(initial).is_dir() else str(Path(initial).parent)
+    if shutil.which("zenity"):
+        r = subprocess.run(["zenity", "--file-selection", "--directory",
+                            f"--title={title}", f"--filename={start}/"],
+                           capture_output=True, text=True)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    if shutil.which("kdialog"):
+        r = subprocess.run(["kdialog", "--getexistingdirectory", start,
+                            "--title", title], capture_output=True, text=True)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    from tkinter import filedialog
+    return filedialog.askdirectory(title=title, initialdir=start, mustexist=False) or ""
 
 
 def open_folder(path: str):
