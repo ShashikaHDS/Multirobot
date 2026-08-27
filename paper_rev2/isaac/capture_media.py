@@ -402,6 +402,45 @@ class CaptureBackend(IsaacBackend):
             w.close()
 
 
+def parse_starts(text: str, grid: np.ndarray, n: int):
+    """Parse "r,c;r,c;..." into n distinct free cells of ``grid`` or exit."""
+    cells = []
+    for tok in [t for t in text.replace(" ", "").split(";") if t]:
+        try:
+            r, c = (int(v) for v in tok.split(","))
+        except ValueError:
+            raise SystemExit(f"--starts: bad cell '{tok}', expected r,c")
+        cells.append((r, c))
+    rows, cols = grid.shape
+    if len(cells) != n:
+        raise SystemExit(f"--starts: {len(cells)} cells given, {n} robots")
+    for r, c in cells:
+        if not (0 <= r < rows and 0 <= c < cols):
+            raise SystemExit(f"--starts: cell {r},{c} outside the {rows}x{cols} grid")
+        if grid[r, c] != FREE:
+            raise SystemExit(f"--starts: cell {r},{c} is an obstacle")
+    if len(set(cells)) != len(cells):
+        raise SystemExit("--starts: two robots on the same cell")
+    return cells
+
+
+def load_grid_file(path: str, m: int) -> np.ndarray:
+    """Read a custom MxM occupancy grid (0 free, 1 obstacle) from JSON:
+    either {"grid": [[...], ...]} or a bare 2-D list."""
+    import json
+    with open(path) as f:
+        data = json.load(f)
+    if isinstance(data, dict):
+        data = data.get("grid", data)
+    grid = np.asarray(data, dtype=np.int8)
+    if grid.shape != (m, m):
+        raise SystemExit(f"--grid-file: grid is {grid.shape}, the N?_M{m} "
+                         f"policy needs {m}x{m}")
+    if not np.isin(grid, (0, 1)).all():
+        raise SystemExit("--grid-file: cells must be 0 (free) or 1 (obstacle)")
+    return grid
+
+
 class CaptureRunner(LockstepRunner):
     """LockstepRunner that mirrors the mapper's known mask into the scene."""
 
@@ -429,6 +468,13 @@ def main():
     ap.add_argument("--still-steps", default="5,10,15,20",
                     help="comma-separated policy steps at which to save stills")
     ap.add_argument("--no-breadcrumbs", action="store_true")
+    ap.add_argument("--grid-file", default=None,
+                    help='custom MxM map as JSON {"grid": [[0/1, ...], ...]} '
+                         'replacing the seeded map (starts: seeded random free '
+                         'cells unless --starts)')
+    ap.add_argument("--starts", default=None,
+                    help='override the start cells: "r,c;r,c;..." (one per '
+                         'robot, free cells; default: the protocol\'s seeded starts)')
     ap.add_argument("--windowed", action="store_true",
                     help="show the Isaac Sim window while recording")
     ap.add_argument("--no-video", action="store_true",
@@ -457,6 +503,17 @@ def main():
     oracle.reset(seed=map_seed)
     grid = oracle.grid_map.copy()
     starts = [tuple(p) for p in oracle.positions]
+    if args.grid_file:
+        grid = load_grid_file(args.grid_file, m)
+        free = np.argwhere(grid == FREE)
+        if len(free) < n:
+            raise SystemExit("--grid-file: fewer free cells than robots")
+        pick = np.random.default_rng(map_seed).choice(len(free), n, replace=False)
+        starts = [(int(free[i][0]), int(free[i][1])) for i in pick]
+        print("custom map:", args.grid_file, flush=True)
+    if args.starts:
+        starts = parse_starts(args.starts, grid, n)
+        print("start cells overridden:", starts, flush=True)
 
     import torch
     torch.manual_seed((map_seed * 1000 + args.sample) % (2 ** 31))

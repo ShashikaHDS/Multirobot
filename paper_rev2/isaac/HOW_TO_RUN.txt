@@ -1,0 +1,141 @@
+HOW TO RUN THE ISAAC SIM VISUALISATION AND VALIDATION
+=====================================================
+(paper_rev2/isaac on the 5090 machine, branch revision-2026-06)
+
+Everything below is run from the isaac folder with Isaac Sim's own python:
+
+    cd ~/rl_swarmrobots/Multirobot/paper_rev2/isaac
+    PY=~/isaac-sim-standalone-5.1.0-linux-x86_64/python.sh
+
+Dependencies (stable-baselines3, gymnasium, imageio, imageio-ffmpeg) are
+already installed into that python.  On a fresh Isaac install run once:
+
+    $PY -m pip install stable-baselines3 gymnasium imageio imageio-ffmpeg
+
+
+0. THE EASY WAY: THE LAUNCHER (GUI or one shell command)
+--------------------------------------------------------
+    cd ~/rl_swarmrobots/Multirobot/paper_rev2/isaac
+    python3 isaac_launcher.py               # control panel: pick N, map, video on/off, Run
+    python3 isaac_launcher.py --n 4         # same from the shell: watch N=4 live + record
+    python3 isaac_launcher.py --n 5 --m 25 --no-video
+    python3 isaac_launcher.py --install-deps
+    python3 isaac_launcher.py --validate smoke     # or full / noise
+
+Uses the normal system python3 (only needs tkinter).  It finds Isaac Sim
+itself, checks/installs the packages Isaac's python needs, runs the
+episode, streams the log, and has buttons for the validation runs and
+the Smorphi close-up.  Everything below is what the launcher calls.
+
+Map and start positions (Watch / Record tab, lower half):
+    Load protocol map    the paper's held-out map for the chosen N/M/map, with
+                         its seeded start cells drawn as numbered circles
+    New blank map        an all-white MxM grid; set "Click does: draw obstacles"
+                         and drag to paint black cells (right-drag erases)
+    place robots         click free cells to put robots 1..N (click a robot to
+                         re-select it); Default / Random positions buttons
+    Save / Open map      map files (json) go to paper_rev2/maps/
+Run episode then uses the drawn map (saved as map.json in the output
+folder) and the placed robots.  From the shell:
+    python3 isaac_launcher.py --n 4 --starts "1,1;1,18;18,1;18,18"
+    python3 isaac_launcher.py --n 4 --grid-file ../maps/mymap.json --starts "..."
+
+
+1. WATCH ONE EPISODE LIVE (the Isaac window opens on the monitor)
+-----------------------------------------------------------------
+    $PY visualize.py --n 4                     # 4 robots, 20x20, map 0, records video
+    $PY visualize.py --n 4 --no-video          # watch only, no MP4 (stills still saved)
+    $PY visualize.py --n 5 --m 25 --map 0      # 5 robots on the 25x25 map
+    $PY visualize.py --n 3 --map 7 --sample 2  # other held-out map / rollout
+    $PY visualize.py --n 4 --headless          # record without opening a window
+
+Options
+    --n            robots: 2, 3, 4 or 5 (20x20); 5 also has a 25x25 model (--m 25)
+    --m            grid size, default 20
+    --map          held-out map 0-9 (map seed 10000+map, same as the paper protocol)
+    --sample       stochastic rollout index (default 0); same numbers = same episode
+    --train-seed   which trained model, 0-2 (default 0)
+    --stills       policy steps at which to save PNG stills, default 0,5,10,15,20
+    --no-video     skip the MP4s
+    --headless     no window
+    --out          output folder (default paper_rev2/media_isaac_N<n>_M<m>_map<map>)
+
+What you see: the Smorphi CAD robots (coloured trim = robot identity),
+their LiDAR beams and hit points in the same colour, pale-yellow tiles on
+the cells the fleet has mapped so far, breadcrumb trails, grey obstacle
+blocks, the arena border.  The window plays about 2x faster than real
+time; the recorded MP4s are exactly real time (sim seconds = video seconds).
+
+Output (in the --out folder)
+    top.mp4                    top-down, 1080x1080, 30 fps
+    persp.mp4                  3/4 view, 1920x1080, 30 fps
+    still_top_step000.png ...  stills at the --stills steps
+    still_<cam>_final.png      final (rendezvous) frame
+
+A run takes about 40 s wall time including the Isaac boot.
+
+If you start it over ssh instead of at the desk, point it at the monitor:
+    export DISPLAY=:1
+
+
+2. THE SAME WITH ALL THE KNOBS (capture_media.py directly)
+----------------------------------------------------------
+visualize.py only builds a command line for capture_media.py.  Call it
+directly for quality/stride/etc.:
+
+    $PY capture_media.py --config N4_M20 --train-seed 0 --map 3 --sample 0 \
+        --still-steps 5,10,15,20 --quality 7 --out ../media_isaac_v2 --windowed
+
+    --config N<n>_M<m>       N2_M20 N3_M20 N4_M20 N5_M20 N5_M25
+    --quality 0-10           MP4 quality; 7 gives 4-9 MB clips, 9 gives 60-90 MB
+    --stride 2               capture every 2nd physics tick (60 Hz -> 30 fps)
+    --fps 30
+    --no-breadcrumbs         no trail spheres
+    --no-video / --windowed  as above
+
+The paper's captures were:
+    $PY capture_media.py --config N4_M20 --train-seed 0 --map 3 --sample 0 --still-steps 5,10,15,20 --quality 7 --out ../media_isaac_v2 --windowed
+    $PY capture_media.py --config N5_M25 --train-seed 0 --map 0 --sample 0 --still-steps 5,10,15,20 --quality 7 --out ../media_isaac_v2_n5 --windowed
+
+
+3. ROBOT MODEL CLOSE-UP (check the Smorphi model itself)
+--------------------------------------------------------
+    $PY smorphi_model.py               # headless, writes ../media_isaac_v2/smorphi_model_test_34.png and _top.png
+    $PY smorphi_model.py --windowed    # same, shown in the window
+
+The model = the CAD mesh ref/cad/smorphi_lowpoly.usd + procedural LiDAR
+puck/mount, dock brackets, webcam, ArUco plate, identity trim
+(smorphi_model.py, function build_smorphi).  If the STL in ref/cad/ is
+ever replaced, rebuild the USD once:
+
+    $PY stl_to_usd.py
+
+
+4. VALIDATION NUMBERS (headless, no window)
+-------------------------------------------
+    bash run_smoke.sh          # smoke: 2 maps, N=4, ~40 s   -> ../results_isaac_smoke2/
+    bash run_smoke.sh full     # 10 maps x N3/N4/N5 x 5 samples, ~1 h -> ../results_isaac/
+    bash run_smoke.sh noise    # sigma 0.00/0.05/0.10 m on N4_M20, ~35 min -> ../results_isaac_n0.00/ _n0.05/ _n0.10/
+
+Each output folder has results.csv (one row per rollout), summary.csv
+(per config) and meta.json.  Runs are seeded: repeating one gives
+byte-identical results.csv.  Single run by hand, e.g.:
+
+    $PY run_validation.py --backend isaac --maps 10 --n 4 --m 20 --samples 5 --reveal lidar --noise 0.05 --out results_isaac_n0.05
+
+The pure-python check that needs no Isaac at all:
+
+    python test_bridge.py
+
+
+5. IF SOMETHING GOES WRONG
+--------------------------
+"Could not find Isaac Sim"      run_smoke.sh looks in ~/isaac-sim*/python.sh; pass
+                                the python explicitly as in section 2.
+Window does not appear          export DISPLAY=:1 (the desk monitor), or use --headless.
+Frames are grey/empty           a camera closer than its near-clip; capture_media's
+                                aim_camera sets 0.02 m, custom cameras must do the same.
+GPU busy                        one validation run and one capture can share the 5090;
+                                do not start two windowed runs at once.
+Output folders                  media_isaac_*/ and results_isaac*/ are not ignored by
+                                git; commit with  git add -f <folder>  if wanted.

@@ -88,6 +88,16 @@ git add paper_rev2/results_isaac* && git commit -m "isaac validation results" \
 
 ## Watch it live / record a video
 
+Simplest: `python3 isaac_launcher.py` (system python, tkinter only) opens
+a control panel — pick N / map / sample, video on or off, Run — and also
+works from the shell: `python3 isaac_launcher.py --n 4`. It locates Isaac
+Sim, installs the packages its python needs, and wraps everything below.
+Its map panel shows the protocol map with the seeded start cells; you can
+click robots onto other cells, or draw your own map (blank white grid,
+paint black obstacles, save/open as json under `paper_rev2/maps/`). The
+shell equivalents are `capture_media.py --starts "r,c;..."` and
+`--grid-file map.json` (MxM 0/1 grid; starts default to seeded free cells).
+
 `visualize.py` is the front end for the capture pipeline (`capture_media.py`
 + `smorphi_model.py`): it replays one seeded episode of the trained policy
 through Isaac Sim with the Smorphi CAD robots, their LiDAR returns, the
