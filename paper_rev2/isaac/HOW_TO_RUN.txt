@@ -36,7 +36,10 @@ Map and start positions (Watch / Record tab, lower half):
                          re-select it); Default / Random positions buttons
     Save / Open map      map files (json) go to paper_rev2/maps/
 Run episode then uses the drawn map (saved as map.json in the output
-folder) and the placed robots.  From the shell:
+folder) and the placed robots.  Where the videos go: the Output folder
+field (Browse... opens a folder chooser); with "ask on Run" ticked the
+chooser opens every time you press Run episode (Cancel aborts the run).
+From the shell:
     python3 isaac_launcher.py --n 4 --starts "1,1;1,18;18,1;18,18"
     python3 isaac_launcher.py --n 4 --grid-file ../maps/mymap.json --starts "..."
 

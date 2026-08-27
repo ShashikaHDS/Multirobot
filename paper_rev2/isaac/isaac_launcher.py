@@ -388,9 +388,22 @@ def launch_gui(isaac_py: str | None):
     ttk.Checkbutton(w, text="Show Isaac window", variable=window_var).grid(row=r, column=5, sticky="w")
     r += 1
     ttk.Label(w, text="Output folder").grid(row=r, column=0, sticky="w")
-    out_entry = ttk.Entry(w, textvariable=out_var, width=70)
-    out_entry.grid(row=r, column=1, columnspan=5, sticky="ew")
+    out_entry = ttk.Entry(w, textvariable=out_var, width=56)
+    out_entry.grid(row=r, column=1, columnspan=4, sticky="ew")
     out_entry.bind("<Key>", lambda e: out_edited.set(True))
+    ask_out_var = tk.BooleanVar(value=True)
+
+    def browse_out():
+        d = filedialog.askdirectory(title="Save videos and stills in ...",
+                                    initialdir=out_var.get() or str(PAPER), mustexist=False)
+        if d:
+            out_var.set(d)
+            out_edited.set(True)
+        return d
+    outbtns = ttk.Frame(w)
+    outbtns.grid(row=r, column=5, sticky="w")
+    ttk.Button(outbtns, text="Browse...", command=browse_out).pack(side="left", padx=(6, 0))
+    ttk.Checkbutton(outbtns, text="ask on Run", variable=ask_out_var).pack(side="left", padx=6)
     r += 1
     btns = ttk.Frame(w)
     btns.grid(row=r, column=0, columnspan=6, sticky="w", pady=(8, 0))
@@ -715,6 +728,9 @@ def launch_gui(isaac_py: str | None):
             messagebox.showerror("Input", "map, sample and quality must be integers")
             return
         n, m = int(n_var.get()), int(m_var.get())
+        if ask_out_var.get() and not browse_out():
+            status_var.set("run cancelled (no output folder chosen)")
+            return
         out = out_var.get().strip() or str(PAPER / f"media_isaac_N{n}_M{m}_map{map_var.get()}")
         grid_file = None
         starts = None
