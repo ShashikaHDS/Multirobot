@@ -338,7 +338,8 @@ class CaptureBackend(IsaacBackend):
 
     def _save_stills(self, label):
         from PIL import Image
-        self.world.step(render=True)      # flush prims added since last render
+        for _ in range(3):        # newly defined prims need extra passes
+            self.world.step(render=True)
         for name in self._cams:
             f = self._frame(name)
             if f is not None:
