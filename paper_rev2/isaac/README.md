@@ -86,6 +86,42 @@ git add paper_rev2/results_isaac* && git commit -m "isaac validation results" \
   && git push origin revision-2026-06
 ```
 
+## Watch it live / record a video
+
+`visualize.py` is the front end for the capture pipeline (`capture_media.py`
++ `smorphi_model.py`): it replays one seeded episode of the trained policy
+through Isaac Sim with the Smorphi CAD robots, their LiDAR returns, the
+explored-area overlay and breadcrumb trails, and shows it in the Isaac Sim
+window while it records.
+
+```bash
+cd <repo>/paper_rev2/isaac
+~/isaac-sim*/python.sh visualize.py --n 4                        # watch N=4 live and record
+~/isaac-sim*/python.sh visualize.py --n 5 --m 25 --map 0         # N5_M25 on held-out map 0
+~/isaac-sim*/python.sh visualize.py --n 4 --no-video --stills 1  # window + stills, no MP4
+~/isaac-sim*/python.sh visualize.py --n 4 --headless             # record with no window (ssh)
+```
+
+`--n` picks the fleet size (trained final2m models: N = 2, 3, 4, 5 on
+20x20 and N = 5 on 25x25), `--m` the grid (default 20), `--train-seed`
+the training seed 0-2, `--map` the held-out map (generator seed
+10000+map, same as the evaluation protocol), `--sample` the stochastic
+rollout index, `--stills` the policy steps at which PNG stills are saved
+(default `0,5,10,15,20`; the final frame is always saved), `--no-video`
+skips the MP4 writers, `--headless` runs without a window.  Output goes
+to `paper_rev2/media_isaac_N<n>_M<m>_map<map>/` unless `--out` is given:
+`top.mp4` (1080x1080) and `persp.mp4` (1920x1080) at 30 fps in real time,
+plus `still_<cam>_step<k>.png` and `still_<cam>_final.png`.
+
+Under the hood `visualize.py` builds an argv for `capture_media.main()`
+(`--config/--train-seed/--map/--sample/--still-steps/--out`, plus
+`--windowed` / `--no-video`); call `capture_media.py` directly for the
+remaining knobs (`--quality`, `--stride`, `--fps`, `--no-breadcrumbs`,
+`--reveal`). The robot geometry comes from `smorphi_model.build_smorphi`
+(the exported CAD in `ref/cad/`, converted once by `stl_to_usd.py`).
+Everything drawn is visual-only: no colliders, so the PhysX raycasts that
+feed the policy are the same as in the validation runs.
+
 ## If the Isaac imports fail
 
 `isaac_env.py` tries `isaacsim.SimulationApp` then `omni.isaac.kit`, and

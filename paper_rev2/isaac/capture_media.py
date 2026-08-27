@@ -25,7 +25,8 @@ CaptureRunner only mirrors the mapper's known mask into the scene.
 
   ~/isaac-sim*/python.sh capture_media.py --config N4_M20 --train-seed 0 \
       --map 3 --sample 0 --still-steps 5,10,15,20 --out ../media_isaac_v2
-  add --windowed to watch it live in the Isaac Sim window while recording
+  add --windowed to watch it live in the Isaac Sim window while recording,
+  --no-video to skip the MP4s (stills only); visualize.py wraps both
 """
 from __future__ import annotations
 
@@ -89,13 +90,15 @@ class CaptureBackend(IsaacBackend):
 
     def __init__(self, out_dir: Path, stride: int = 2, fps: int = 30,
                  quality: int = 6, breadcrumbs: bool = True,
-                 top_res=(1080, 1080), persp_res=(1920, 1080), **kw):
+                 top_res=(1080, 1080), persp_res=(1920, 1080),
+                 video: bool = True, **kw):
         super().__init__(**kw)
         self.out_dir = Path(out_dir)
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.stride = stride
         self.fps = fps
         self.quality = quality
+        self.video = video
         self.breadcrumbs = breadcrumbs
         self.top_res = tuple(top_res)
         self.persp_res = tuple(persp_res)
@@ -248,9 +251,11 @@ class CaptureBackend(IsaacBackend):
             aim_camera(stage, path, s["pos"], s["target"], s["up"],
                        focal_mm=s["focal"])
             self._cams[name] = cam
-            self._writers[name] = imageio.get_writer(
-                str(self.out_dir / f"{name}.mp4"), fps=self.fps,
-                codec="libx264", quality=self.quality, pixelformat="yuv420p")
+            if self.video:
+                self._writers[name] = imageio.get_writer(
+                    str(self.out_dir / f"{name}.mp4"), fps=self.fps,
+                    codec="libx264", quality=self.quality,
+                    pixelformat="yuv420p")
         if not self.headless:                # let the author watch the 3/4 cam
             try:
                 import omni.kit.viewport.utility as vpu
@@ -329,7 +334,7 @@ class CaptureBackend(IsaacBackend):
 
     def _capture_tick(self):
         self._tick += 1
-        if self._tick % self.stride:
+        if not self._writers or self._tick % self.stride:
             return
         for name in self._cams:
             f = self._frame(name)
@@ -426,6 +431,8 @@ def main():
     ap.add_argument("--no-breadcrumbs", action="store_true")
     ap.add_argument("--windowed", action="store_true",
                     help="show the Isaac Sim window while recording")
+    ap.add_argument("--no-video", action="store_true",
+                    help="skip the MP4 writers (stills are still saved)")
     ap.add_argument("--out", default=str(HERE.parents[0] / "media_isaac_v2"))
     args = ap.parse_args()
 
@@ -439,6 +446,7 @@ def main():
     backend = CaptureBackend(out_dir=Path(args.out), stride=args.stride,
                              fps=args.fps, quality=args.quality,
                              breadcrumbs=not args.no_breadcrumbs,
+                             video=not args.no_video,
                              vmax=args.vmax, n_beams=args.n_beams,
                              headless=not args.windowed)
     backend.still_steps = {int(x) for x in args.still_steps.split(",") if x}
