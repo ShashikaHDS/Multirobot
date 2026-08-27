@@ -4,3 +4,5 @@ isaac/ref/cad/Tiley_Single - *.STL
 isaac/ref/cad/export_log.txt
 isaac/ref/cad_coarse/Tiley_Single - *.STL
 isaac/ref/cad_coarse/export_log.txt
+isaac/ref/cad/smorphi_merged.stl
+isaac/ref/cad/smorphi_midpoly.stl

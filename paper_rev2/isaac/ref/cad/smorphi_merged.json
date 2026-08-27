@@ -1,0 +1,54 @@
+{
+ "triangles": 985596,
+ "parts_kept": 54,
+ "parts_dropped": 46,
+ "bbox_min": [
+  0.8499994874000549,
+  11.96671199798584,
+  0.8499994874000549
+ ],
+ "bbox_max": [
+  170.85000610351562,
+  216.67385864257812,
+  170.85000610351562
+ ],
+ "size": [
+  170.0,
+  204.7071533203125,
+  170.0
+ ],
+ "largest_parts": [
+  [
+   "Master PCB Subassembly V3-1 TILEY2.3_MAS__ARD_EDIT4-1 TILEY2.3_MASTERBOARD_EDIT3-1.STL",
+   335385
+  ],
+  [
+   "Tiley Module Test 21 Base Module-1 Base Plate V24-1.STL",
+   150376
+  ],
+  [
+   "E-tray assembly V14-1 TILEY2.3_SLAVEBOARD_FIXED_FULL-1 TILEY2.3_SLAVEBOARD_BASE-1.STL",
+   89250
+  ],
+  [
+   "Tiley Module Test 21 Base Module-1 Mecan__subassembly V10 L-1 Mecanum Wheel L V2-1.STL",
+   42134
+  ],
+  [
+   "Tiley Module Test 21 Base Module-1 Mecan__subassembly V10 L-2 Mecanum Wheel L V2-1.STL",
+   42134
+  ],
+  [
+   "Tiley Module Test 21 Base Module-1 Mecan__subassembly V10 R-1 Mecanum Wheel R V2-1.STL",
+   42130
+  ],
+  [
+   "Tiley Module Test 21 Base Module-1 Mecan__subassembly V10 R-2 Mecanum Wheel R V2-1.STL",
+   42130
+  ],
+  [
+   "Tiley Module Test 21 Base Module-1 Mecan__r subassembly V10 L-1 Mecanum motor V3-1.STL",
+   20842
+  ]
+ ]
+}
